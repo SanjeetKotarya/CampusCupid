@@ -6,6 +6,8 @@ function ChatWindow({ match, currentUser, onClose }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const messagesEndRef = useRef();
+  const inputRef = useRef();
+  const containerRef = useRef();
 
   useEffect(() => {
     if (!match?.matchId) return;
@@ -23,6 +25,22 @@ function ChatWindow({ match, currentUser, onClose }) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // On input focus, scroll input into view (for mobile)
+  useEffect(() => {
+    const handleFocus = () => {
+      setTimeout(() => {
+        inputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 300);
+    };
+    const inputEl = inputRef.current;
+    if (inputEl) {
+      inputEl.addEventListener("focus", handleFocus);
+    }
+    return () => {
+      if (inputEl) inputEl.removeEventListener("focus", handleFocus);
+    };
+  }, []);
+
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!input.trim()) return;
@@ -35,17 +53,23 @@ function ChatWindow({ match, currentUser, onClose }) {
   };
 
   return (
-    <div style={{
-      position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
-      background: "rgba(255,255,255,0.98)", maxWidth: 430, margin: "0 auto",
-      display: "flex", flexDirection: "column", height: "100vh"
-    }}>
+    <div
+      ref={containerRef}
+      style={{
+        position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
+        background: "rgba(255,255,255,0.98)", maxWidth: 430, margin: "0 auto",
+        display: "flex", flexDirection: "column",
+        height: "100dvh",
+        minHeight: "100vh",
+        boxSizing: "border-box"
+      }}
+    >
       <div style={{ display: "flex", alignItems: "center", padding: 12, borderBottom: "1px solid #eee", flexShrink: 0 }}>
         <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: "#ff4081", marginRight: 8 }}>&larr;</button>
         <img src={match.photoURL || "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"} alt={match.name} style={{ width: 36, height: 36, borderRadius: "50%", marginRight: 8 }} />
         <span style={{ fontWeight: 600, color: "#ff4081" }}>{match.name}</span>
       </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: 16, background: "#fff0fa" }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: 16, background: "#fff0fa", minHeight: 0 }}>
         {messages.map(msg => (
           <div key={msg.id} style={{
             display: "flex",
@@ -68,6 +92,7 @@ function ChatWindow({ match, currentUser, onClose }) {
       </div>
       <form onSubmit={sendMessage} style={{ display: "flex", padding: 12, borderTop: "1px solid #eee", background: "#fff", flexShrink: 0 }}>
         <input
+          ref={inputRef}
           value={input}
           onChange={e => setInput(e.target.value)}
           placeholder="Type a message..."
