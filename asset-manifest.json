@@ -1,0 +1,17 @@
+{
+  "files": {
+    "main.css": "/CampusCupid/static/css/main.761de96b.css",
+    "main.js": "/CampusCupid/static/js/main.b211dc3a.js",
+    "static/js/488.92c8c6bf.chunk.js": "/CampusCupid/static/js/488.92c8c6bf.chunk.js",
+    "service-worker.js": "/CampusCupid/service-worker.js",
+    "static/media/logo.svg": "/CampusCupid/static/media/logo.2d27ead7c10f774c5306bcf3c257a728.svg",
+    "index.html": "/CampusCupid/index.html",
+    "main.761de96b.css.map": "/CampusCupid/static/css/main.761de96b.css.map",
+    "main.b211dc3a.js.map": "/CampusCupid/static/js/main.b211dc3a.js.map",
+    "488.92c8c6bf.chunk.js.map": "/CampusCupid/static/js/488.92c8c6bf.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.761de96b.css",
+    "static/js/main.b211dc3a.js"
+  ]
+}
