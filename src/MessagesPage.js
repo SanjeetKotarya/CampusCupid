@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { db, auth } from "./firebase";
-import { collection, doc, getDoc, onSnapshot, deleteDoc, query, where } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, onSnapshot, deleteDoc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import ChatWindow from "./ChatWindow";
 import { useNavigate } from "react-router-dom";
@@ -18,45 +18,35 @@ function MessagesPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const unsubAuth = onAuthStateChanged(auth, (user) => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setCurrentUser(user);
-
-        // FIX: Query for matches that include the current user and listen for real-time updates.
-        const matchesQuery = query(collection(db, "matches"), where("users", "array-contains", user.uid));
-        
-        const unsubMatches = onSnapshot(matchesQuery, async (snapshot) => {
-          const userMatchesPromises = snapshot.docs.map(async (matchDoc) => {
-            const data = matchDoc.data();
-            const otherUserId = data.users.find((id) => id !== user.uid);
-            if (otherUserId) {
-              const otherUserDoc = await getDoc(doc(db, "users", otherUserId));
-              if (otherUserDoc.exists()) {
-                return {
-                  ...otherUserDoc.data(),
-                  id: otherUserId,
-                  matchId: matchDoc.id,
-                };
+        // Listen for matches
+        const q = collection(db, "matches");
+        const unsubscribe = onSnapshot(q, async (snapshot) => {
+          const userMatches = [];
+          for (const docSnap of snapshot.docs) {
+            const data = docSnap.data();
+            if (data.users.includes(user.uid)) {
+              // Get the other user's info
+              const otherId = data.users.find((id) => id !== user.uid);
+              const otherDoc = await getDoc(doc(db, "users", otherId));
+              if (otherDoc.exists()) {
+                userMatches.push({
+                  ...otherDoc.data(),
+                  id: otherId,
+                  matchId: docSnap.id,
+                });
               }
             }
-            return null;
-          });
-
-          const userMatches = (await Promise.all(userMatchesPromises)).filter(Boolean);
+          }
           setMatches(userMatches);
           setLoading(false);
         });
-
-        return () => unsubMatches(); // Unsubscribe from matches listener
-      } else {
-        // Handle user logout
-        setCurrentUser(null);
-        setMatches([]);
-        setLoading(true);
+        return () => unsubscribe();
       }
     });
-
-    return () => unsubAuth(); // Unsubscribe from auth listener
+    return () => unsub();
   }, []);
 
   if (loading) return <div style={{ padding: 32, textAlign: "center" }}>Loading...</div>;
