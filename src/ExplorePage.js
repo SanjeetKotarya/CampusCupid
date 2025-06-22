@@ -25,31 +25,32 @@ function ExplorePage() {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setCurrentUser(user);
-        // Fetch all users except current
+        
+        // Step 1: Fetch all users in one go.
         const usersQuerySnapshot = await getDocs(collection(db, "users"));
-        const userList = [];
+        const allUsers = new Map();
         usersQuerySnapshot.forEach((doc) => {
           if (doc.id !== user.uid) {
-            userList.push({ id: doc.id, ...doc.data() });
+            allUsers.set(doc.id, { id: doc.id, ...doc.data() });
           }
         });
 
-        // FIX: Query for matches that include the current user
+        // Step 2: Fetch only the matches that include the current user.
         const matchesQuery = query(collection(db, "matches"), where("users", "array-contains", user.uid));
         const matchesSnapshot = await getDocs(matchesQuery);
         const matchedUserIds = new Set();
         matchesSnapshot.forEach((matchDoc) => {
-          const data = matchDoc.data();
-          if (data.users && data.users.includes(user.uid)) {
-            data.users.forEach((uid) => {
-              if (uid !== user.uid) matchedUserIds.add(uid);
-            });
+          const matchedUsers = matchDoc.data().users;
+          const otherUserId = matchedUsers.find(uid => uid !== user.uid);
+          if (otherUserId) {
+            matchedUserIds.add(otherUserId);
           }
         });
+
+        // Step 3: Filter out matched users from the initial user list.
+        const filteredUserList = Array.from(allUsers.values()).filter(u => !matchedUserIds.has(u.id));
         
-        // Filter out matched users
-        const filteredUsers = userList.filter((u) => !matchedUserIds.has(u.id));
-        setUsers(filteredUsers);
+        setUsers(filteredUserList);
         setLoading(false);
       }
     });
