@@ -246,8 +246,41 @@ function ExplorePage() {
 
               {isTop && (
                 <div style={{ display: "flex", justifyContent: "space-around", width: "100%", marginTop: 'auto', padding: 16, background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(10px)', borderTop: '1px solid #eee', position: 'sticky', bottom: 0, flexShrink: 0 }}>
-                  <button style={{ background: 'none', border: 'none', fontSize: 32, color: "#ff7a7a" }}>❌</button>
-                  <button style={{ background: 'none', border: 'none', fontSize: 32, color: "#84ff7a" }}>💖</button>
+                  <button
+                    style={{ background: 'none', border: 'none', fontSize: 32, color: "#ff7a7a", cursor: 'pointer' }}
+                    onClick={() => {
+                      // Swipe left (dislike)
+                      const topUser = users[0];
+                      setSwipeOut({ dir: 'left', id: topUser.id });
+                      setRemovingId(topUser.id);
+                      setTimeout(() => {
+                        setUsers((prev) => prev.filter((u) => u.id !== topUser.id));
+                        if (cardRef.current) cardRef.current.style.transition = '';
+                        if (cardRef.current) cardRef.current.style.transform = '';
+                        dragPos.current = { x: 0, y: 0 };
+                        setSwipeOut(null);
+                        setRemovingId(null);
+                      }, 250);
+                    }}
+                  >❌</button>
+                  <button
+                    style={{ background: 'none', border: 'none', fontSize: 32, color: "#84ff7a", cursor: 'pointer' }}
+                    onClick={() => {
+                      // Swipe right (like)
+                      const topUser = users[0];
+                      setSwipeOut({ dir: 'right', id: topUser.id });
+                      setRemovingId(topUser.id);
+                      setTimeout(() => {
+                        handleLike(topUser);
+                        setUsers((prev) => prev.filter((u) => u.id !== topUser.id));
+                        if (cardRef.current) cardRef.current.style.transition = '';
+                        if (cardRef.current) cardRef.current.style.transform = '';
+                        dragPos.current = { x: 0, y: 0 };
+                        setSwipeOut(null);
+                        setRemovingId(null);
+                      }, 250);
+                    }}
+                  >💖</button>
                 </div>
               )}
             </div>

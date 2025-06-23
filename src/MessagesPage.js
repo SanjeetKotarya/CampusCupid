@@ -160,10 +160,30 @@ function MessagesPage() {
             borderBottom: tab === 'requests' ? '3px solid #ff4081' : 'none',
             cursor: 'pointer',
             transition: 'color 0.18s, border 0.18s',
+            position: 'relative',
           }}
           onClick={() => setTab('requests')}
         >
           Requests
+          {requests.length > 0 && (
+            <span style={{
+              position: 'absolute',
+              top: 8,
+              right: 32,
+              background: '#ff4081',
+              color: '#fff',
+              borderRadius: '50%',
+              width: 22,
+              height: 22,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 13,
+              fontWeight: 700,
+              fontFamily: 'monospace',
+              boxShadow: '0 2px 8px #ff408122',
+            }}>{requests.length}</span>
+          )}
         </button>
       </div>
       {/* Tab Content */}
