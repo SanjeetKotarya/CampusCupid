@@ -36,6 +36,7 @@ function ChatWindow({ match, currentUser, onClose }) {
       timestamp: serverTimestamp(),
     });
     setInput("");
+    if (inputRef.current) inputRef.current.focus();
   };
 
   return (
