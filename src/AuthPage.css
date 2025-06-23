@@ -147,4 +147,12 @@ body, .auth-bg {
 }
 .edit-profile-modal-scroll::-webkit-scrollbar {
   display: none; /* Chrome/Safari/Webkit */
+}
+
+.auth-info-message {
+  margin-top: 16px;
+  font-size: 0.85em;
+  color: #888;
+  text-align: center;
+  line-height: 1.5;
 } 

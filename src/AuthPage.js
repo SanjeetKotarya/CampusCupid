@@ -78,7 +78,7 @@ function AuthPage() {
         <button onClick={handleGoogleSignIn} className="auth-btn google">
           <span className="google-icon">G</span> Continue with Google
         </button>
-        <div className="auth-info-message" style={{ marginTop: '16px', fontSize: '0.95em', color: '#555', textAlign: 'center' }}>
+        <div className="auth-info-message">
           “We use Google Sign-In through Firebase. We do not store or access your password — authentication is handled securely by Google, and we only receive your email and public profile information.”
         </div>
         {error && <div className="auth-error">{error}</div>}
