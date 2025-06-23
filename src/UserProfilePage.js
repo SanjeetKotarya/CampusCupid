@@ -25,9 +25,28 @@ function UserProfilePage() {
   if (!profile) return <div style={{ padding: 32, textAlign: "center" }}>User not found.</div>;
 
   return (
-    <div style={{ maxWidth: 430, width: '100%', margin: '0 auto', boxSizing: 'border-box', padding: '0 18px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+    <div style={{ maxWidth: 430, width: '100%', margin: '0 auto', boxSizing: 'border-box', padding: '0 18px 80px 18px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       {/* Back Button */}
-      <button onClick={() => navigate(-1)} style={{ alignSelf: 'flex-start', margin: '18px 0 0 0', background: 'none', border: 'none', color: '#ff4081', fontSize: 22, fontWeight: 700, cursor: 'pointer' }}>&larr; Back</button>
+      <button 
+        onClick={() => navigate(-1)} 
+        style={{ 
+          alignSelf: 'flex-start', 
+          margin: '18px 0 0 0', 
+          background: 'none', 
+          border: 'none', 
+          color: '#ff4081', 
+          fontSize: 18, 
+          fontWeight: 500, 
+          cursor: 'pointer', 
+          display: 'inline-flex', 
+          alignItems: 'center', 
+          gap: 6
+        }}
+        aria-label="Back"
+      >
+        <span style={{ fontSize: 22, lineHeight: 1, verticalAlign: 'middle', display: 'inline-block' }}>&larr;</span>
+        <span style={{ fontSize: 18, fontWeight: 500, letterSpacing: 0.2, lineHeight: 1, verticalAlign: 'middle', display: 'inline-block' }}>Back</span>
+      </button>
       {/* Profile Header */}
       <div style={{ display: "flex", flexDirection: 'column', alignItems: "center", gap: 18, marginBottom: 18, width: '100%', marginTop: 32 }}>
         <img
@@ -44,10 +63,15 @@ function UserProfilePage() {
       </div>
       {/* Separator Line */}
       <hr style={{ width: '100%', border: 'none', borderTop: '1.5px solid #ffe0ec', margin: '18px 0 18px 0' }} />
-      {/* Photo Gallery Placeholder */}
-      <div style={{ color: "#ff4081", fontSize: 14, marginBottom: 10 }}>(Photo uploads coming soon!)</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, minHeight: 120, alignItems: "center", justifyItems: "center", width: '100%' }}>
-        <span style={{ color: "#bbb", fontSize: 18, gridColumn: "1 / span 3" }}>No photos yet</span>
+      {/* Photo Gallery */}
+      <div style={{ width: '100%', marginBottom: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12, alignItems: "center", justifyItems: "center", width: '100%' }}>
+          {(profile.gallery && profile.gallery.length > 0) ? profile.gallery.map((url, idx) => (
+            <div key={url} style={{ position: 'relative', width: '100%' }}>
+              <img src={url} alt={`Gallery ${idx+1}`} style={{ width: '100%', height: 'auto', objectFit: 'cover', borderRadius: 12, border: '2px solid #ffb6d5', boxShadow: '0 2px 8px #ff408133', display: 'block' }} />
+            </div>
+          )) : <span style={{ color: "#bbb", fontSize: 18, gridColumn: "1 / span 1" }}>No photos yet</span>}
+        </div>
       </div>
     </div>
   );

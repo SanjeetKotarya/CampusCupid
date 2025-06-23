@@ -156,7 +156,20 @@ function ExplorePage() {
   if (loading) return <div style={{ padding: 32, textAlign: "center" }}>Loading...</div>;
 
   return (
-    <div style={{ width: "100%", maxWidth: 430, margin: "0 auto", height: "calc(100vh - 70px)", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
+    <div style={{ width: "100%", maxWidth: 430, margin: "0 auto", height: "calc(100vh - 70px)", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", paddingTop: 36 }}>
+      {/* App Logo Top Left */}
+      <div style={{ position: 'absolute', top: 8, left: 18, zIndex: 10000, display: 'flex', alignItems: 'center', userSelect: 'none' }}>
+        <span style={{ fontSize: 28, marginRight: 6, verticalAlign: 'middle' }}>❤️</span>
+        <span style={{
+          fontFamily: 'Pacifico, cursive',
+          fontSize: 28,
+          color: '#ff4081',
+          fontWeight: 400,
+          letterSpacing: 0.5,
+          verticalAlign: 'middle',
+          textShadow: '0 1px 8px #ff408122'
+        }}>CampusCupid</span>
+      </div>
       {matchPopup && (
         <div style={{
           position: "absolute", top: 40, left: 0, right: 0, margin: "auto", zIndex: 9999, background: "#fff0fa", borderRadius: 18, boxShadow: "0 4px 24px #ff408122", padding: 24, textAlign: "center", maxWidth: 320
@@ -174,7 +187,7 @@ function ExplorePage() {
           let style = {
             position: "absolute",
             width: "90%",
-            height: "75vh",
+            height: "76vh",
             maxHeight: 600,
             background: "#fff",
             borderRadius: 24,
@@ -206,7 +219,6 @@ function ExplorePage() {
           } else {
             style = {
               ...style,
-              top: idx * 6,
               scale: 1 - idx * 0.03,
               opacity: 1 - idx * 0.12,
             };
@@ -239,9 +251,26 @@ function ExplorePage() {
                 <div style={{ color: "#ff4081", fontSize: 14, marginBottom: 8, textAlign: "center" }}>{Array.isArray(user.interests) ? user.interests.join(", ") : user.interests}</div>
               </div>
 
-              {/* No pictures uploaded message at the bottom */}
-              <div style={{ width: '100%', minHeight: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb', fontSize: 18, fontStyle: 'italic', margin: '16px 0 0 0' }}>
-                No pictures uploaded
+              {/* Gallery Images Section */}
+              <div style={{ width: '100%', padding: '0 18px 0 18px', marginBottom: 8, boxSizing: 'border-box' }}>
+                {user.gallery && user.gallery.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {user.gallery.map((url, idx) => (
+                      <div key={url} style={{ width: '100%', overflow: 'hidden', borderRadius: 12 }}>
+                        <img
+                          src={url}
+                          alt={`Gallery ${idx+1}`}
+                          style={{ width: '100%', height: 'auto', objectFit: 'cover', borderRadius: 12, border: '2px solid #ffb6d5', boxShadow: '0 2px 8px #ff408133', display: 'block' }}
+                          loading="lazy"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ width: '100%', minHeight: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb', fontSize: 18, fontStyle: 'italic', margin: '16px 0 0 0' }}>
+                    No pictures uploaded
+                  </div>
+                )}
               </div>
 
               {isTop && (
