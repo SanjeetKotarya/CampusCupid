@@ -12,6 +12,8 @@ function ChatWindow({ match, currentUser, onClose }) {
   const navigate = useNavigate();
   const [deleteMsgId, setDeleteMsgId] = useState(null);
   const [deletingMsg, setDeletingMsg] = useState(false);
+  const [menuMsgId, setMenuMsgId] = useState(null);
+  const [menuAnchor, setMenuAnchor] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     if (!match?.matchId) return;
@@ -53,12 +55,30 @@ function ChatWindow({ match, currentUser, onClose }) {
 
   // Long press logic
   let longPressTimer = null;
-  const handleMsgPointerDown = (msgId, isMine) => (e) => {
+  const handleMsgPointerDown = (msgId, isMine, msgText) => (e) => {
     if (!isMine) return;
-    longPressTimer = setTimeout(() => setDeleteMsgId(msgId), 500);
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    longPressTimer = setTimeout(() => {
+      setMenuMsgId(msgId);
+      setMenuAnchor({ x: clientX, y: clientY });
+    }, 500);
   };
   const handleMsgPointerUp = () => {
     clearTimeout(longPressTimer);
+  };
+
+  const handleCopyMessage = (msgId) => {
+    const msg = messages.find(m => m.id === msgId);
+    if (msg) {
+      navigator.clipboard.writeText(msg.text);
+    }
+    setMenuMsgId(null);
+  };
+
+  const handleUnsendMessage = (msgId) => {
+    setMenuMsgId(null);
+    setDeleteMsgId(msgId);
   };
 
   const handleDeleteMessage = async () => {
@@ -72,6 +92,18 @@ function ChatWindow({ match, currentUser, onClose }) {
     } finally {
       setDeletingMsg(false);
     }
+  };
+
+  // Calculate menu position to keep it inside the viewport
+  const getMenuPosition = () => {
+    const menuWidth = 140;
+    const menuHeight = 96;
+    let { x, y } = menuAnchor;
+    if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 8;
+    if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 8;
+    if (x < 8) x = 8;
+    if (y < 8) y = 8;
+    return { left: x, top: y };
   };
 
   return (
@@ -121,10 +153,10 @@ function ChatWindow({ match, currentUser, onClose }) {
                     cursor: isMine ? 'pointer' : 'default',
                     userSelect: 'none',
                   }}
-                  onPointerDown={handleMsgPointerDown(msg.id, isMine)}
+                  onPointerDown={handleMsgPointerDown(msg.id, isMine, msg.text)}
                   onPointerUp={handleMsgPointerUp}
                   onPointerLeave={handleMsgPointerUp}
-                  onTouchStart={handleMsgPointerDown(msg.id, isMine)}
+                  onTouchStart={handleMsgPointerDown(msg.id, isMine, msg.text)}
                   onTouchEnd={handleMsgPointerUp}
                   onTouchCancel={handleMsgPointerUp}
                 >
@@ -133,6 +165,28 @@ function ChatWindow({ match, currentUser, onClose }) {
               </div>
             );
           })}
+          {/* Message Action Menu */}
+          {menuMsgId && (
+            <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 4000, background: 'rgba(0,0,0,0.01)' }} onClick={() => setMenuMsgId(null)}>
+              <div style={{
+                position: 'absolute',
+                ...getMenuPosition(),
+                background: '#fff',
+                borderRadius: 12,
+                boxShadow: '0 4px 24px #ff408122',
+                padding: 0,
+                minWidth: 120,
+                width: 140,
+                minHeight: 0,
+                overflow: 'hidden',
+                border: '1px solid #ffe0ec',
+                zIndex: 4100
+              }}>
+                <button style={{ display: 'block', width: '100%', padding: '12px 24px', background: 'none', border: 'none', color: '#ff4081', fontWeight: 600, fontSize: 16, cursor: 'pointer', textAlign: 'left' }} onClick={() => handleCopyMessage(menuMsgId)}>Copy</button>
+                <button style={{ display: 'block', width: '100%', padding: '12px 24px', background: 'none', border: 'none', color: '#d32f2f', fontWeight: 600, fontSize: 16, cursor: 'pointer', textAlign: 'left' }} onClick={() => handleUnsendMessage(menuMsgId)}>Unsend</button>
+              </div>
+            </div>
+          )}
           {/* Delete Message Modal */}
           {deleteMsgId && (
             <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>

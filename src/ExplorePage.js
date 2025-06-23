@@ -156,7 +156,7 @@ function ExplorePage() {
   if (loading) return <div style={{ padding: 32, textAlign: "center" }}>Loading...</div>;
 
   return (
-    <div style={{ width: "100%", maxWidth: 430, margin: "0 auto", height: "calc(100vh - 70px)", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", paddingTop: 36 }}>
+    <div style={{ width: "100%", maxWidth: 430, margin: "0 auto", height: "calc(100vh - 70px)", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", paddingTop: 48 }}>
       {/* App Logo Top Left */}
       <div style={{ position: 'absolute', top: 8, left: 18, zIndex: 10000, display: 'flex', alignItems: 'center', userSelect: 'none' }}>
         <span style={{ fontSize: 28, marginRight: 6, verticalAlign: 'middle' }}>❤️</span>
@@ -187,7 +187,7 @@ function ExplorePage() {
           let style = {
             position: "absolute",
             width: "90%",
-            height: "76vh",
+            height: "75vh",
             maxHeight: 600,
             background: "#fff",
             borderRadius: 24,
@@ -219,8 +219,9 @@ function ExplorePage() {
           } else {
             style = {
               ...style,
-              scale: 1 - idx * 0.03,
+              transform: `translateY(-38px) scale(${1 - idx * 0.03})`,
               opacity: 1 - idx * 0.12,
+              transition: 'transform 0.35s cubic-bezier(.4,1.5,.5,1), opacity 0.25s',
             };
           }
           return (
