@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { db } from "./firebase";
-import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, deleteDoc, doc } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 
 function ChatWindow({ match, currentUser, onClose }) {
@@ -10,6 +10,8 @@ function ChatWindow({ match, currentUser, onClose }) {
   const inputRef = useRef();
   const containerRef = useRef();
   const navigate = useNavigate();
+  const [deleteMsgId, setDeleteMsgId] = useState(null);
+  const [deletingMsg, setDeletingMsg] = useState(false);
 
   useEffect(() => {
     if (!match?.matchId) return;
@@ -39,6 +41,29 @@ function ChatWindow({ match, currentUser, onClose }) {
     if (inputRef.current) inputRef.current.focus();
   };
 
+  // Long press logic
+  let longPressTimer = null;
+  const handleMsgPointerDown = (msgId, isMine) => (e) => {
+    if (!isMine) return;
+    longPressTimer = setTimeout(() => setDeleteMsgId(msgId), 500);
+  };
+  const handleMsgPointerUp = () => {
+    clearTimeout(longPressTimer);
+  };
+
+  const handleDeleteMessage = async () => {
+    if (!deleteMsgId) return;
+    setDeletingMsg(true);
+    try {
+      await deleteDoc(doc(db, "chats", match.matchId, "messages", deleteMsgId));
+      setDeleteMsgId(null);
+    } catch (err) {
+      alert("Failed to delete message: " + err.message);
+    } finally {
+      setDeletingMsg(false);
+    }
+  };
+
   return (
     <div
       ref={containerRef}
@@ -63,24 +88,63 @@ function ChatWindow({ match, currentUser, onClose }) {
       </div>
       <div style={{ flex: 1, overflowY: "auto", background: "#fff0fa", minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ marginTop: 'auto', padding: '16px' }}>
-          {messages.map(msg => (
-            <div key={msg.id} style={{
-              display: "flex",
-              flexDirection: currentUser.uid === msg.senderId ? "row-reverse" : "row",
-              marginBottom: 10,
-              alignItems: "flex-end"
-            }}>
-              <div style={{
-                background: currentUser.uid === msg.senderId ? "#ff4081" : "#fff",
-                color: currentUser.uid === msg.senderId ? "#fff" : "#ff4081",
-                borderRadius: 18,
-                padding: "8px 14px",
-                maxWidth: 220,
-                fontSize: 16,
-                boxShadow: "0 2px 8px #ff408122"
-              }}>{msg.text}</div>
+          {messages.map(msg => {
+            const isMine = currentUser.uid === msg.senderId;
+            return (
+              <div key={msg.id} style={{
+                display: "flex",
+                flexDirection: isMine ? "row-reverse" : "row",
+                marginBottom: 10,
+                alignItems: "flex-end"
+              }}>
+                <div
+                  style={{
+                    background: isMine ? "#ff4081" : "#fff",
+                    color: isMine ? "#fff" : "#ff4081",
+                    borderRadius: 18,
+                    padding: "8px 14px",
+                    maxWidth: 220,
+                    fontSize: 16,
+                    boxShadow: "0 2px 8px #ff408122",
+                    position: 'relative',
+                    cursor: isMine ? 'pointer' : 'default',
+                    userSelect: 'none',
+                  }}
+                  onPointerDown={handleMsgPointerDown(msg.id, isMine)}
+                  onPointerUp={handleMsgPointerUp}
+                  onPointerLeave={handleMsgPointerUp}
+                  onTouchStart={handleMsgPointerDown(msg.id, isMine)}
+                  onTouchEnd={handleMsgPointerUp}
+                  onTouchCancel={handleMsgPointerUp}
+                >
+                  {msg.text}
+                </div>
+              </div>
+            );
+          })}
+          {/* Delete Message Modal */}
+          {deleteMsgId && (
+            <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+              <div style={{ background: '#fff', borderRadius: 18, boxShadow: '0 4px 32px #ff408144', padding: 32, minWidth: 220, textAlign: 'center', maxWidth: 320, width: '90%', pointerEvents: 'auto' }}>
+                <div style={{ fontSize: 20, color: '#ff4081', fontWeight: 700, marginBottom: 12 }}>Delete Message?</div>
+                <div style={{ color: '#888', marginBottom: 22, fontSize: 16 }}>Are you sure you want to delete this message?</div>
+                <button
+                  style={{ background: '#ff4081', color: '#fff', border: 'none', borderRadius: 16, padding: '10px 28px', fontWeight: 600, fontSize: 16, marginRight: 12, cursor: 'pointer' }}
+                  onClick={handleDeleteMessage}
+                  disabled={deletingMsg}
+                >
+                  {deletingMsg ? 'Deleting...' : 'Yes, Delete'}
+                </button>
+                <button
+                  style={{ background: '#ffe0ec', color: '#ff4081', border: 'none', borderRadius: 16, padding: '10px 28px', fontWeight: 600, fontSize: 16, marginLeft: 12, cursor: 'pointer' }}
+                  onClick={() => setDeleteMsgId(null)}
+                  disabled={deletingMsg}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-          ))}
+          )}
           <div ref={messagesEndRef} />
         </div>
       </div>
