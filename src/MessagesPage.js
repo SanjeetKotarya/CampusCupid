@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { db, auth } from "./firebase";
-import { collection, getDocs, doc, getDoc, onSnapshot, deleteDoc } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, onSnapshot, deleteDoc, query } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import ChatWindow from "./ChatWindow";
 import { useNavigate } from "react-router-dom";
@@ -118,9 +118,26 @@ function MessagesPage() {
             <button
               style={{ background: "#ff4081", color: "#fff", border: "none", borderRadius: 16, padding: "8px 22px", fontWeight: 600, fontSize: 15, marginRight: 10, cursor: "pointer" }}
               onClick={async () => {
-                await deleteDoc(doc(db, "matches", unmatchTarget.matchId));
-                setMatches((prev) => prev.filter((m) => m.id !== unmatchTarget.id));
-                if (selectedMatch && selectedMatch.id === unmatchTarget.id) setSelectedMatch(null);
+                if (!currentUser || !unmatchTarget) return;
+                const matchId = unmatchTarget.matchId;
+                const otherUserId = unmatchTarget.id;
+
+                // Delete chat messages
+                const messagesQuery = query(collection(db, "chats", matchId, "messages"));
+                const messagesSnapshot = await getDocs(messagesQuery);
+                const messageDeletions = messagesSnapshot.docs.map(doc => deleteDoc(doc.ref));
+
+                // Also delete the match document and the likes from both users
+                await Promise.all([
+                  ...messageDeletions,
+                  deleteDoc(doc(db, "matches", matchId)),
+                  deleteDoc(doc(db, "users", currentUser.uid, "likes", otherUserId)),
+                  deleteDoc(doc(db, "users", otherUserId, "likes", currentUser.uid)),
+                ]);
+
+                // Update UI
+                setMatches(prev => prev.filter(m => m.id !== otherUserId));
+                if (selectedMatch?.id === otherUserId) setSelectedMatch(null);
                 setUnmatchTarget(null);
               }}
             >

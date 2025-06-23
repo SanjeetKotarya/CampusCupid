@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { db, auth } from "./firebase";
-import { collection, getDocs, doc, setDoc, getDoc, query, where } from "firebase/firestore";
+import { collection, getDocs, doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 
 function clamp(val, min, max) {
@@ -26,16 +26,15 @@ function ExplorePage() {
       if (user) {
         setCurrentUser(user);
         // Fetch all users except current
-        const usersSnapshot = await getDocs(collection(db, "users"));
+        const querySnapshot = await getDocs(collection(db, "users"));
         const userList = [];
-        usersSnapshot.forEach((doc) => {
+        querySnapshot.forEach((doc) => {
           if (doc.id !== user.uid) {
             userList.push({ id: doc.id, ...doc.data() });
           }
         });
         // Fetch matches for current user
-        const matchesQuery = query(collection(db, "matches"), where("users", "array-contains", user.uid));
-        const matchesSnapshot = await getDocs(matchesQuery);
+        const matchesSnapshot = await getDocs(collection(db, "matches"));
         const matchedUserIds = new Set();
         matchesSnapshot.forEach((matchDoc) => {
           const data = matchDoc.data();
