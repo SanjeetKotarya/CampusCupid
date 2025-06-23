@@ -51,11 +51,11 @@ function EditProfileModal({ open, onClose, profile, onSave }) {
           overflowY: 'auto',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', width: '100%', marginBottom: 12 }}>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, color: '#ff4081', cursor: 'pointer', marginRight: 8, padding: 0, lineHeight: 1 }} aria-label="Back">
-            {'<'}
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%', marginBottom: 12, position: 'relative', minHeight: 36 }}>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 26, color: '#ff4081', cursor: 'pointer', marginRight: 8, padding: 0, lineHeight: 1, position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)' }} aria-label="Back">
+            <span style={{ display: 'inline-block', fontWeight: 700 }}>&#8592;</span>
           </button>
-          <span style={{ color: "#ff4081", fontWeight: 700, fontSize: 17 }}>Edit Profile</span>
+          <span style={{ color: "#ff4081", fontWeight: 700, fontSize: 20, margin: '0 auto', textAlign: 'center', width: '100%' }}>Edit Profile</span>
         </div>
         <form onSubmit={handleSubmit} style={{ width: '100%' }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
@@ -257,8 +257,8 @@ function ProfilePage() {
       </div>
       {/* Delete Confirmation Modal */}
       {deleteOpen && (
-        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 3000, background: 'rgba(0,0,0,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: '#fff', borderRadius: 18, boxShadow: '0 4px 24px #ff408122', padding: 32, minWidth: 280, textAlign: 'center', maxWidth: 360, width: '90%' }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+          <div style={{ background: '#fff', borderRadius: 18, boxShadow: '0 4px 32px #ff408144', padding: 32, minWidth: 280, textAlign: 'center', maxWidth: 360, width: '90%', pointerEvents: 'auto' }}>
             <div style={{ fontSize: 24, color: '#ff4081', fontWeight: 700, marginBottom: 12 }}>Delete Account?</div>
             <div style={{ color: '#888', marginBottom: 22, fontSize: 18 }}>Are you sure you want to delete your account? This action cannot be undone and will remove all your data, matches, and chats.</div>
             <button

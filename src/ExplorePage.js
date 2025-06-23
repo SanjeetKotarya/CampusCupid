@@ -20,6 +20,8 @@ function ExplorePage() {
   const [matchPopup, setMatchPopup] = useState(null);
   const [removingId, setRemovingId] = useState(null); // id of card being removed
   const cardRef = useRef();
+  const dragPos = useRef({ x: 0, y: 0 });
+  const rafRef = useRef();
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -71,79 +73,72 @@ function ExplorePage() {
     }
   };
 
-  // Drag handlers
+  // Drag handlers (refactored for smooth animation)
   const handleDragStart = (e) => {
     if (users.length === 0 || removingId) return;
     const isTouch = e.type === "touchstart";
     const clientX = isTouch ? e.touches[0].clientX : e.clientX;
     const clientY = isTouch ? e.touches[0].clientY : e.clientY;
-    setDrag({
-      isDragging: true,
-      startX: clientX,
-      startY: clientY,
-      x: 0,
-      y: 0,
-      lockDirection: null,
-    });
+    dragPos.current = { x: 0, y: 0, startX: clientX, startY: clientY, isDragging: true, lockDirection: null };
+    if (cardRef.current) cardRef.current.style.transition = '';
     document.addEventListener(isTouch ? "touchmove" : "mousemove", handleDragMove, { passive: false });
     document.addEventListener(isTouch ? "touchend" : "mouseup", handleDragEnd);
   };
   const handleDragMove = (e) => {
-    setDrag((d) => {
-      if (!d.isDragging) return d;
-      const isTouch = e.type === "touchmove";
-      const clientX = isTouch ? e.touches[0].clientX : e.clientX;
-      const clientY = isTouch ? e.touches[0].clientY : e.clientY;
-
-      const dx = clientX - d.startX;
-      const dy = clientY - d.startY;
-      let newLockDirection = d.lockDirection;
-
-      if (!newLockDirection && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
-        if (Math.abs(dx) > Math.abs(dy)) {
-          newLockDirection = 'horizontal';
-        } else {
-          newLockDirection = 'vertical';
+    if (!dragPos.current.isDragging) return;
+    const isTouch = e.type === "touchmove";
+    const clientX = isTouch ? e.touches[0].clientX : e.clientX;
+    const clientY = isTouch ? e.touches[0].clientY : e.clientY;
+    let dx = clientX - dragPos.current.startX;
+    let dy = clientY - dragPos.current.startY;
+    let lockDirection = dragPos.current.lockDirection;
+    if (!lockDirection && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+      lockDirection = Math.abs(dx) > Math.abs(dy) ? 'horizontal' : 'vertical';
+    }
+    if (lockDirection === 'horizontal') {
+      if (isTouch) e.preventDefault();
+      dx = clamp(dx, -400, 400);
+      dy = clamp(dy, -100, 100);
+      dragPos.current.x = dx;
+      dragPos.current.y = dy;
+      dragPos.current.lockDirection = lockDirection;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        if (cardRef.current) {
+          cardRef.current.style.transform = `translate(${dx}px, ${dy}px) rotate(${dx / 18}deg)`;
         }
-      }
-
-      if (newLockDirection === 'horizontal') {
-        if (isTouch) e.preventDefault();
-        return {
-          ...d,
-          x: clamp(dx, -400, 400),
-          y: clamp(dy, -100, 100),
-          lockDirection: newLockDirection,
-        };
-      }
-      return { ...d, lockDirection: newLockDirection };
-    });
+      });
+    } else {
+      dragPos.current.lockDirection = lockDirection;
+    }
   };
   const handleDragEnd = (e) => {
-    setDrag((d) => {
-      if (!d.isDragging) return d;
-      let dir = null;
-      if (d.lockDirection === 'horizontal') {
-        if (d.x > 120) dir = "right";
-        if (d.x < -120) dir = "left";
-      }
-
-      if (dir) {
-        const topUser = users[0];
-        setSwipeOut({ dir, id: topUser.id });
-        setRemovingId(topUser.id);
-        setTimeout(() => {
-          if (dir === "right") handleLike(topUser);
-          setUsers((prev) => prev.filter((u) => u.id !== topUser.id));
-          setDrag({ x: 0, y: 0, isDragging: false, startX: 0, startY: 0, lockDirection: null });
-          setSwipeOut(null);
-          setRemovingId(null);
-        }, 250);
-      } else {
-        setDrag({ x: 0, y: 0, isDragging: false, startX: 0, startY: 0, lockDirection: null });
-      }
-      return { ...d, isDragging: false };
-    });
+    if (!dragPos.current.isDragging) return;
+    let dir = null;
+    if (dragPos.current.lockDirection === 'horizontal') {
+      if (dragPos.current.x > 120) dir = "right";
+      if (dragPos.current.x < -120) dir = "left";
+    }
+    if (dir) {
+      if (cardRef.current) cardRef.current.style.transition = 'transform 0.25s cubic-bezier(.4,1.5,.5,1)';
+      if (cardRef.current) cardRef.current.style.transform = `translate(${dir === "right" ? 500 : -500}px, 0px) rotate(${dir === "right" ? 30 : -30}deg)`;
+      const topUser = users[0];
+      setSwipeOut({ dir, id: topUser.id });
+      setRemovingId(topUser.id);
+      setTimeout(() => {
+        if (dir === "right") handleLike(topUser);
+        setUsers((prev) => prev.filter((u) => u.id !== topUser.id));
+        if (cardRef.current) cardRef.current.style.transition = '';
+        if (cardRef.current) cardRef.current.style.transform = '';
+        dragPos.current = { x: 0, y: 0 };
+        setSwipeOut(null);
+        setRemovingId(null);
+      }, 250);
+    } else {
+      if (cardRef.current) cardRef.current.style.transition = 'transform 0.18s';
+      if (cardRef.current) cardRef.current.style.transform = '';
+    }
+    dragPos.current = { x: 0, y: 0 };
     document.removeEventListener("mousemove", handleDragMove);
     document.removeEventListener("mouseup", handleDragEnd);
     document.removeEventListener("touchmove", handleDragMove);
@@ -198,7 +193,6 @@ function ExplorePage() {
               style = {
                 ...style,
                 cursor: drag.isDragging && drag.lockDirection === 'horizontal' ? "grabbing" : "grab",
-                transform: `translate(${drag.x}px, ${drag.y}px) rotate(${drag.x / 18}deg)`
               };
             }
           } else {
