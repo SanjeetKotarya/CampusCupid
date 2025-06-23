@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { db } from "./firebase";
 import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from "firebase/firestore";
+import { useNavigate } from "react-router-dom";
 
 function ChatWindow({ match, currentUser, onClose }) {
   const [messages, setMessages] = useState([]);
@@ -8,6 +9,7 @@ function ChatWindow({ match, currentUser, onClose }) {
   const messagesEndRef = useRef();
   const inputRef = useRef();
   const containerRef = useRef();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!match?.matchId) return;
@@ -50,7 +52,12 @@ function ChatWindow({ match, currentUser, onClose }) {
     >
       <div style={{ display: "flex", alignItems: "center", padding: 12, borderBottom: "1px solid #eee", flexShrink: 0 }}>
         <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: "#ff4081", marginRight: 8 }}>&larr;</button>
-        <img src={match.photoURL || "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"} alt={match.name} style={{ width: 36, height: 36, borderRadius: "50%", marginRight: 8 }} />
+        <img
+          src={match.photoURL || "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"}
+          alt={match.name}
+          style={{ width: 36, height: 36, borderRadius: "50%", marginRight: 8, cursor: "pointer", border: '2px solid #ffb6d5' }}
+          onClick={() => navigate(`/profile/${match.id}`)}
+        />
         <span style={{ fontWeight: 600, color: "#ff4081" }}>{match.name}</span>
       </div>
       <div style={{ flex: 1, overflowY: "auto", background: "#fff0fa", minHeight: 0, display: 'flex', flexDirection: 'column' }}>

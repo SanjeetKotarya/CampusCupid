@@ -29,7 +29,7 @@ function UserProfilePage() {
       {/* Back Button */}
       <button onClick={() => navigate(-1)} style={{ alignSelf: 'flex-start', margin: '18px 0 0 0', background: 'none', border: 'none', color: '#ff4081', fontSize: 22, fontWeight: 700, cursor: 'pointer' }}>&larr; Back</button>
       {/* Profile Header */}
-      <div style={{ display: "flex", flexDirection: 'column', alignItems: "center", gap: 18, marginBottom: 18, width: '100%', marginTop: 12 }}>
+      <div style={{ display: "flex", flexDirection: 'column', alignItems: "center", gap: 18, marginBottom: 18, width: '100%', marginTop: 32 }}>
         <img
           src={profile.photoURL || "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"}
           alt="Profile"
@@ -37,10 +37,16 @@ function UserProfilePage() {
         />
         <h2 style={{ margin: 0, color: "#ff4081", fontSize: 28, textAlign: 'center' }}>{profile.name || "Name"}</h2>
         {profile.pronouns && <span style={{ color: "#888", fontSize: 15, textAlign: 'center' }}>{profile.pronouns}</span>}
-        <div style={{ color: "#555", fontSize: 16, margin: "6px 0", textAlign: 'center' }}>{profile.college} {profile.year && <>· {profile.year}</>}</div>
+        <div style={{ color: "#555", fontSize: 16, margin: "6px 0", textAlign: 'center' }}>{profile.college}{profile.department && <> · {profile.department}</>}{profile.year && <> · {profile.year}</>}</div>
         <div style={{ color: "#666", fontSize: 15, marginBottom: 6, textAlign: 'center' }}>{profile.about}</div>
         <div style={{ color: "#ff4081", fontSize: 14, textAlign: 'center' }}>{Array.isArray(profile.interests) ? profile.interests.join(", ") : profile.interests}</div>
-        <div style={{ color: "#888", fontSize: 14, marginTop: 8 }}>Gender: {profile.gender}</div>
+      </div>
+      {/* Separator Line */}
+      <hr style={{ width: '100%', border: 'none', borderTop: '1.5px solid #ffe0ec', margin: '18px 0 18px 0' }} />
+      {/* Photo Gallery Placeholder */}
+      <div style={{ color: "#ff4081", fontSize: 14, marginBottom: 10 }}>(Photo uploads coming soon!)</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, minHeight: 120, alignItems: "center", justifyItems: "center", width: '100%' }}>
+        <span style={{ color: "#bbb", fontSize: 18, gridColumn: "1 / span 3" }}>No photos yet</span>
       </div>
     </div>
   );

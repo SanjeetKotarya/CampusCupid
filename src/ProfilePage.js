@@ -67,6 +67,7 @@ function EditProfileModal({ open, onClose, profile, onSave }) {
             <input name="name" value={form.name} onChange={handleChange} placeholder="Name" className="auth-input" required style={{ width: '100%', maxWidth: 340 }} />
             <input name="pronouns" value={form.pronouns || ""} onChange={handleChange} placeholder="Pronouns (e.g. she/her)" className="auth-input" style={{ width: '100%', maxWidth: 340 }} />
             <input name="college" value={form.college} onChange={handleChange} placeholder="College/University" className="auth-input" required style={{ width: '100%', maxWidth: 340 }} />
+            <input name="department" value={form.department || ""} onChange={handleChange} placeholder="Department" className="auth-input" required style={{ width: '100%', maxWidth: 340 }} />
             <select name="year" value={form.year} onChange={handleChange} className="auth-input" required style={{ width: '100%', maxWidth: 340 }}>
               <option value="">Select Year</option>
               {years.map((y) => <option key={y} value={y}>{y}</option>)}
@@ -92,6 +93,7 @@ function ProfilePage() {
     name: "",
     pronouns: "",
     college: "",
+    department: "",
     year: "",
     about: "",
     gender: "",
@@ -133,9 +135,19 @@ function ProfilePage() {
       await setDoc(doc(db, "users", user.uid), {
         ...profile,
         ...form,
-        interests: form.interests.split(",").map((i) => i.trim()).filter(Boolean),
+        department: form.department || "",
+        interests: typeof form.interests === "string"
+          ? form.interests.split(",").map((i) => i.trim()).filter(Boolean)
+          : Array.isArray(form.interests) ? form.interests : [],
       });
-      setProfile((p) => ({ ...p, ...form }));
+      setProfile((p) => ({
+        ...p,
+        ...form,
+        department: form.department || "",
+        interests: typeof form.interests === "string"
+          ? form.interests.split(",").map((i) => i.trim()).filter(Boolean)
+          : Array.isArray(form.interests) ? form.interests : [],
+      }));
       setEditOpen(false);
     } catch (err) {
       setError("Failed to save profile. " + err.message);
@@ -208,27 +220,93 @@ function ProfilePage() {
         <span style={{ fontSize: 28, fontWeight: 700 }}>&#9776;</span>
       </button>
       {menuOpen && (
-        <div style={{ position: 'absolute', top: 54, right: 18, background: '#fff', borderRadius: 12, boxShadow: '0 4px 24px #ff408122', minWidth: 170, zIndex: 20, padding: '8px 0', display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
-          <button
-            style={{ background: 'none', border: 'none', color: '#ff4081', fontWeight: 600, fontSize: 16, padding: '12px 18px', textAlign: 'left', cursor: 'pointer' }}
-            onClick={() => { setEditOpen(true); setMenuOpen(false); }}
-          >
-            Edit Profile
-          </button>
-          <button
-            style={{ background: 'none', border: 'none', color: '#ff4081', fontWeight: 600, fontSize: 16, padding: '12px 18px', textAlign: 'left', cursor: 'pointer' }}
-            onClick={() => { handleSignOut(); setMenuOpen(false); }}
-          >
-            Logout
-          </button>
-          <button
-            style={{ background: 'none', border: 'none', color: '#d32f2f', fontWeight: 600, fontSize: 16, padding: '12px 18px', textAlign: 'left', cursor: 'pointer' }}
-            onClick={() => { setDeleteOpen(true); setMenuOpen(false); }}
-            disabled={deleting}
-          >
-            Delete Account
-          </button>
-        </div>
+        <>
+          {/* Overlay to close menu on outside click */}
+          <div
+            onClick={() => setMenuOpen(false)}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100vw',
+              height: '100vh',
+              zIndex: 19,
+              background: 'transparent',
+            }}
+          />
+          <div style={{
+            position: 'absolute',
+            top: 54,
+            right: 18,
+            background: '#fff',
+            borderRadius: 18,
+            boxShadow: '0 4px 24px #ff408122',
+            minWidth: 220,
+            minHeight: 160,
+            zIndex: 20,
+            padding: '16px 0',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'stretch',
+            width: 240,
+          }}>
+            <button
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#ff4081',
+                fontWeight: 600,
+                fontSize: 18,
+                padding: '16px 28px',
+                textAlign: 'left',
+                cursor: 'pointer',
+                transition: 'background 0.18s',
+              }}
+              onMouseOver={e => e.currentTarget.style.background = '#ffe0ec'}
+              onMouseOut={e => e.currentTarget.style.background = 'none'}
+              onClick={() => { setEditOpen(true); setMenuOpen(false); }}
+            >
+              Edit Profile
+            </button>
+            <button
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#ff4081',
+                fontWeight: 600,
+                fontSize: 18,
+                padding: '16px 28px',
+                textAlign: 'left',
+                cursor: 'pointer',
+                transition: 'background 0.18s',
+              }}
+              onMouseOver={e => e.currentTarget.style.background = '#ffe0ec'}
+              onMouseOut={e => e.currentTarget.style.background = 'none'}
+              onClick={() => { handleSignOut(); setMenuOpen(false); }}
+            >
+              Logout
+            </button>
+            <button
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#d32f2f',
+                fontWeight: 600,
+                fontSize: 18,
+                padding: '16px 28px',
+                textAlign: 'left',
+                cursor: 'pointer',
+                transition: 'background 0.18s',
+              }}
+              onMouseOver={e => e.currentTarget.style.background = '#ffe0ec'}
+              onMouseOut={e => e.currentTarget.style.background = 'none'}
+              onClick={() => { setDeleteOpen(true); setMenuOpen(false); }}
+              disabled={deleting}
+            >
+              Delete Account
+            </button>
+          </div>
+        </>
       )}
       {/* Profile Header */}
       <div style={{ display: "flex", flexDirection: 'column', alignItems: "center", gap: 18, marginBottom: 18, width: '100%', marginTop: 32 }}>
@@ -239,7 +317,7 @@ function ProfilePage() {
         />
         <h2 style={{ margin: 0, color: "#ff4081", fontSize: 28, textAlign: 'center' }}>{profile.name || "Your Name"}</h2>
         {profile.pronouns && <span style={{ color: "#888", fontSize: 15, textAlign: 'center' }}>{profile.pronouns}</span>}
-        <div style={{ color: "#555", fontSize: 16, margin: "6px 0", textAlign: 'center' }}>{profile.college} {profile.year && <>· {profile.year}</>}</div>
+        <div style={{ color: "#555", fontSize: 16, margin: "6px 0", textAlign: 'center' }}>{profile.college}{profile.department && <> · {profile.department}</>}{profile.year && <> · {profile.year}</>}</div>
         <div style={{ color: "#666", fontSize: 15, marginBottom: 6, textAlign: 'center' }}>{profile.about}</div>
         <div style={{ color: "#ff4081", fontSize: 14, textAlign: 'center' }}>{Array.isArray(profile.interests) ? profile.interests.join(", ") : profile.interests}</div>
       </div>

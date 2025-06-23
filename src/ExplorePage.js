@@ -221,7 +221,11 @@ function ExplorePage() {
                 />
                 <h2 style={{ color: "#ff4081", margin: "8px 0 2px 0" }}>{user.name}</h2>
                 <div style={{ color: "#888", fontSize: 15, marginBottom: 2 }}>{user.pronouns}</div>
-                <div style={{ color: "#555", fontSize: 16, marginBottom: 4 }}>{user.college} {user.year && <>· {user.year}</>}</div>
+                <div style={{ color: "#555", fontSize: 16, marginBottom: 4 }}>
+                  {user.college}
+                  {user.department && <> · {user.department}</>}
+                  {user.year && <> · {user.year}</>}
+                </div>
                 <div style={{ color: "#666", fontSize: 15, marginBottom: 8, textAlign: "center", whiteSpace: 'pre-wrap' }}>{user.about}</div>
                 <div style={{ color: "#ff4081", fontSize: 14, marginBottom: 8, textAlign: "center" }}>{Array.isArray(user.interests) ? user.interests.join(", ") : user.interests}</div>
               </div>
