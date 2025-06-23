@@ -119,3 +119,12 @@
     border-radius: 0;
   }
 }
+
+/* Hide scrollbars for profile cards in ExplorePage */
+.profile-card-scrollbar-hide {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE 10+ */
+}
+.profile-card-scrollbar-hide::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/Webkit */
+}

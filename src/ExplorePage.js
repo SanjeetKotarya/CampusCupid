@@ -15,7 +15,7 @@ function ExplorePage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
-  const [drag, setDrag] = useState({ x: 0, y: 0, isDragging: false, startX: 0, startY: 0 });
+  const [drag, setDrag] = useState({ x: 0, y: 0, isDragging: false, startX: 0, startY: 0, lockDirection: null });
   const [swipeOut, setSwipeOut] = useState(null); // {dir: 'left'|'right', id}
   const [matchPopup, setMatchPopup] = useState(null);
   const [removingId, setRemovingId] = useState(null); // id of card being removed
@@ -83,8 +83,9 @@ function ExplorePage() {
       startY: clientY,
       x: 0,
       y: 0,
+      lockDirection: null,
     });
-    document.addEventListener(isTouch ? "touchmove" : "mousemove", handleDragMove);
+    document.addEventListener(isTouch ? "touchmove" : "mousemove", handleDragMove, { passive: false });
     document.addEventListener(isTouch ? "touchend" : "mouseup", handleDragEnd);
   };
   const handleDragMove = (e) => {
@@ -93,19 +94,40 @@ function ExplorePage() {
       const isTouch = e.type === "touchmove";
       const clientX = isTouch ? e.touches[0].clientX : e.clientX;
       const clientY = isTouch ? e.touches[0].clientY : e.clientY;
-      return {
-        ...d,
-        x: clamp(clientX - d.startX, -400, 400),
-        y: clamp(clientY - d.startY, -100, 100),
-      };
+
+      const dx = clientX - d.startX;
+      const dy = clientY - d.startY;
+      let newLockDirection = d.lockDirection;
+
+      if (!newLockDirection && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+        if (Math.abs(dx) > Math.abs(dy)) {
+          newLockDirection = 'horizontal';
+        } else {
+          newLockDirection = 'vertical';
+        }
+      }
+
+      if (newLockDirection === 'horizontal') {
+        if (isTouch) e.preventDefault();
+        return {
+          ...d,
+          x: clamp(dx, -400, 400),
+          y: clamp(dy, -100, 100),
+          lockDirection: newLockDirection,
+        };
+      }
+      return { ...d, lockDirection: newLockDirection };
     });
   };
   const handleDragEnd = (e) => {
     setDrag((d) => {
       if (!d.isDragging) return d;
       let dir = null;
-      if (d.x > 120) dir = "right";
-      if (d.x < -120) dir = "left";
+      if (d.lockDirection === 'horizontal') {
+        if (d.x > 120) dir = "right";
+        if (d.x < -120) dir = "left";
+      }
+
       if (dir) {
         const topUser = users[0];
         setSwipeOut({ dir, id: topUser.id });
@@ -113,12 +135,12 @@ function ExplorePage() {
         setTimeout(() => {
           if (dir === "right") handleLike(topUser);
           setUsers((prev) => prev.filter((u) => u.id !== topUser.id));
-          setDrag({ x: 0, y: 0, isDragging: false, startX: 0, startY: 0 });
+          setDrag({ x: 0, y: 0, isDragging: false, startX: 0, startY: 0, lockDirection: null });
           setSwipeOut(null);
           setRemovingId(null);
         }, 250);
       } else {
-        setDrag({ x: 0, y: 0, isDragging: false, startX: 0, startY: 0 });
+        setDrag({ x: 0, y: 0, isDragging: false, startX: 0, startY: 0, lockDirection: null });
       }
       return { ...d, isDragging: false };
     });
@@ -148,20 +170,22 @@ function ExplorePage() {
           const isTop = idx === 0;
           let style = {
             position: "absolute",
-            width: 340,
-            maxWidth: "90vw",
+            width: "90%",
+            height: "75vh",
+            maxHeight: 600,
             background: "#fff",
             borderRadius: 24,
             boxShadow: "0 8px 32px #ff408122",
-            padding: 24,
             left: 0,
             right: 0,
             margin: "auto",
             zIndex: users.length - idx,
             display: "flex",
             flexDirection: "column",
-            alignItems: "center",
-            transition: "transform 0.25s cubic-bezier(.22,1,.36,1), opacity 0.2s",
+            overflowY: 'auto',
+            overscrollBehaviorY: 'contain',
+            WebkitOverscrollBehaviorY: 'contain',
+            touchAction: 'pan-x',
           };
           if (isTop) {
             if (swipeOut && swipeOut.id === user.id) {
@@ -173,7 +197,7 @@ function ExplorePage() {
             } else {
               style = {
                 ...style,
-                cursor: drag.isDragging ? "grabbing" : "grab",
+                cursor: drag.isDragging && drag.lockDirection === 'horizontal' ? "grabbing" : "grab",
                 transform: `translate(${drag.x}px, ${drag.y}px) rotate(${drag.x / 18}deg)`
               };
             }
@@ -190,23 +214,33 @@ function ExplorePage() {
               key={user.id}
               ref={isTop ? cardRef : null}
               style={style}
+              className="profile-card-scrollbar-hide"
               onMouseDown={isTop && !removingId ? handleDragStart : undefined}
               onTouchStart={isTop && !removingId ? handleDragStart : undefined}
             >
-              <img
-                src={user.photoURL || "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"}
-                alt={user.name}
-                style={{ width: 110, height: 110, borderRadius: "50%", objectFit: "cover", border: "4px solid #ffb6d5", marginBottom: 12 }}
-              />
-              <h2 style={{ color: "#ff4081", margin: "8px 0 2px 0" }}>{user.name}</h2>
-              <div style={{ color: "#888", fontSize: 15, marginBottom: 2 }}>{user.pronouns}</div>
-              <div style={{ color: "#555", fontSize: 16, marginBottom: 4 }}>{user.college} {user.year && <>· {user.year}</>}</div>
-              <div style={{ color: "#666", fontSize: 15, marginBottom: 8, textAlign: "center" }}>{user.about}</div>
-              <div style={{ color: "#ff4081", fontSize: 14, marginBottom: 8, textAlign: "center" }}>{Array.isArray(user.interests) ? user.interests.join(", ") : user.interests}</div>
+              {/* Profile details at the top */}
+              <div style={{ padding: '24px 24px 12px 24px', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <img
+                  src={user.photoURL || "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"}
+                  alt={user.name}
+                  style={{ width: 110, height: 110, borderRadius: "50%", objectFit: "cover", border: "4px solid #ffb6d5", marginBottom: 12 }}
+                />
+                <h2 style={{ color: "#ff4081", margin: "8px 0 2px 0" }}>{user.name}</h2>
+                <div style={{ color: "#888", fontSize: 15, marginBottom: 2 }}>{user.pronouns}</div>
+                <div style={{ color: "#555", fontSize: 16, marginBottom: 4 }}>{user.college} {user.year && <>· {user.year}</>}</div>
+                <div style={{ color: "#666", fontSize: 15, marginBottom: 8, textAlign: "center", whiteSpace: 'pre-wrap' }}>{user.about}</div>
+                <div style={{ color: "#ff4081", fontSize: 14, marginBottom: 8, textAlign: "center" }}>{Array.isArray(user.interests) ? user.interests.join(", ") : user.interests}</div>
+              </div>
+
+              {/* No pictures uploaded message at the bottom */}
+              <div style={{ width: '100%', minHeight: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb', fontSize: 18, fontStyle: 'italic', margin: '16px 0 0 0' }}>
+                No pictures uploaded
+              </div>
+
               {isTop && (
-                <div style={{ display: "flex", justifyContent: "space-between", width: "100%", marginTop: 10 }}>
-                  <span style={{ fontSize: 28, color: "#bbb" }}>❌</span>
-                  <span style={{ fontSize: 28, color: "#ff4081" }}>💖</span>
+                <div style={{ display: "flex", justifyContent: "space-around", width: "100%", marginTop: 'auto', padding: 16, background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(10px)', borderTop: '1px solid #eee', position: 'sticky', bottom: 0, flexShrink: 0 }}>
+                  <button style={{ background: 'none', border: 'none', fontSize: 32, color: "#ff7a7a" }}>❌</button>
+                  <button style={{ background: 'none', border: 'none', fontSize: 32, color: "#84ff7a" }}>💖</button>
                 </div>
               )}
             </div>

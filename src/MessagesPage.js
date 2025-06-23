@@ -109,14 +109,14 @@ function MessagesPage() {
       )}
       {unmatchTarget && (
         <div style={{
-          position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.18)", zIndex: 9999,
+          position: "absolute", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0,0,0,0.18)", zIndex: 9999,
           display: "flex", alignItems: "center", justifyContent: "center"
         }}>
-          <div style={{ background: "#fff", borderRadius: 18, boxShadow: "0 4px 24px #ff408122", padding: 32, minWidth: 280, textAlign: "center" }}>
-            <div style={{ fontSize: 20, color: "#ff4081", fontWeight: 700, marginBottom: 12 }}>Unmatch {unmatchTarget.name}?</div>
-            <div style={{ color: "#888", marginBottom: 22 }}>Are you sure you want to unmatch? This will remove your chat and match with this user.</div>
+          <div style={{ background: "#fff", borderRadius: 18, boxShadow: "0 4px 24px #ff408122", padding: 32, minWidth: 280, textAlign: "center", maxWidth: 360, width: '90%' }}>
+            <div style={{ fontSize: 24, color: "#ff4081", fontWeight: 700, marginBottom: 12 }}>Unmatch {unmatchTarget.name}?</div>
+            <div style={{ color: "#888", marginBottom: 22, fontSize: 18 }}>Are you sure you want to unmatch? This will remove your chat and match with this user.</div>
             <button
-              style={{ background: "#ff4081", color: "#fff", border: "none", borderRadius: 16, padding: "8px 22px", fontWeight: 600, fontSize: 15, marginRight: 10, cursor: "pointer" }}
+              style={{ background: "#ff4081", color: "#fff", border: "none", borderRadius: 16, padding: "12px 32px", fontWeight: 600, fontSize: 18, marginRight: 16, cursor: "pointer" }}
               onClick={async () => {
                 if (!currentUser || !unmatchTarget) return;
                 const matchId = unmatchTarget.matchId;
@@ -144,7 +144,7 @@ function MessagesPage() {
               Yes, Unmatch
             </button>
             <button
-              style={{ background: "#ffe0ec", color: "#ff4081", border: "none", borderRadius: 16, padding: "8px 22px", fontWeight: 600, fontSize: 15, marginLeft: 10, cursor: "pointer" }}
+              style={{ background: "#ffe0ec", color: "#ff4081", border: "none", borderRadius: 16, padding: "12px 32px", fontWeight: 600, fontSize: 18, marginLeft: 16, cursor: "pointer" }}
               onClick={() => setUnmatchTarget(null)}
             >
               Cancel

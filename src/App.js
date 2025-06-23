@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import logo from './logo.svg';
+import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import './App.css';
 import AuthPage from "./AuthPage";
 import HomePage from "./HomePage";
@@ -8,7 +7,7 @@ import ExplorePage from "./ExplorePage";
 import MessagesPage from "./MessagesPage";
 import ProfilePage from "./ProfilePage";
 import UserProfilePage from "./UserProfilePage";
-import { Link, useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { auth } from "./firebase";
 
 function BottomNav() {
@@ -54,30 +53,45 @@ function BottomNav() {
   );
 }
 
+function AppContent() {
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [authChecked, setAuthChecked] = useState(false);
+    const location = useLocation();
+
+    useEffect(() => {
+        const unsubscribe = auth.onAuthStateChanged((user) => {
+            setIsAuthenticated(!!user);
+            setAuthChecked(true);
+        });
+        return () => unsubscribe();
+    }, []);
+
+    if (!authChecked) {
+        return <div style={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%'}}>Loading...</div>;
+    }
+
+    const showNav = isAuthenticated && !['/auth', '/'].includes(location.pathname);
+
+    return (
+        <>
+            <Routes>
+                <Route path="/auth" element={isAuthenticated ? <Navigate to="/explore" /> : <AuthPage />} />
+                <Route path="/explore" element={isAuthenticated ? <ExplorePage /> : <Navigate to="/auth" />} />
+                <Route path="/messages" element={isAuthenticated ? <MessagesPage /> : <Navigate to="/auth" />} />
+                <Route path="/profile" element={isAuthenticated ? <ProfilePage /> : <Navigate to="/auth" />} />
+                <Route path="/profile/:userId" element={isAuthenticated ? <UserProfilePage /> : <Navigate to="/auth" />} />
+                <Route path="*" element={<Navigate to={isAuthenticated ? "/explore" : "/auth"} />} />
+            </Routes>
+            {showNav && <BottomNav />}
+        </>
+    );
+}
+
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      setIsAuthenticated(!!user);
-    });
-    return () => unsubscribe();
-  }, []);
-
   return (
     <div className="app-mobile-frame">
       <Router>
-        <Routes>
-          <Route path="/auth" element={<AuthPage />} />
-          <Route path="/home" element={<Navigate to="/explore" />} />
-          <Route path="/explore" element={<ExplorePage />} />
-          <Route path="/messages" element={<MessagesPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/profile/:userId" element={<UserProfilePage />} />
-          <Route path="*" element={<Navigate to="/auth" />} />
-        </Routes>
-        {/* Show bottom nav only when authenticated and not on /auth */}
-        {isAuthenticated && !["/auth", "/"].includes(window.location.pathname) && <BottomNav />}
+        <AppContent />
       </Router>
     </div>
   );
