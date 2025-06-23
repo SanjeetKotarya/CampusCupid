@@ -63,6 +63,7 @@ function EditProfileModal({ open, onClose, profile, onSave }) {
               src={form.photoURL || "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"}
               alt="Profile"
               style={{ width: 80, height: 80, borderRadius: "50%", objectFit: "cover", border: "2px solid #ffb6d5", marginBottom: 18, marginTop: 8 }}
+              onError={e => { e.target.onerror = null; e.target.src = "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"; }}
             />
             <input name="name" value={form.name} onChange={handleChange} placeholder="Name" className="auth-input" required style={{ width: '100%', maxWidth: 340 }} />
             <input name="pronouns" value={form.pronouns || ""} onChange={handleChange} placeholder="Pronouns (e.g. she/her)" className="auth-input" style={{ width: '100%', maxWidth: 340 }} />
@@ -109,6 +110,14 @@ function ProfilePage() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Load cached profile first
+    const cached = localStorage.getItem('profile_page_profile');
+    if (cached) {
+      try {
+        setProfile(JSON.parse(cached));
+        setLoading(false);
+      } catch {}
+    }
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
         navigate("/auth");
@@ -119,8 +128,10 @@ function ProfilePage() {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           setProfile({ ...profile, ...docSnap.data() });
+          localStorage.setItem('profile_page_profile', JSON.stringify({ ...profile, ...docSnap.data() }));
         } else {
           setProfile((p) => ({ ...p, name: currentUser.displayName || "", photoURL: currentUser.photoURL || "" }));
+          localStorage.setItem('profile_page_profile', JSON.stringify({ ...profile, name: currentUser.displayName || "", photoURL: currentUser.photoURL || "" }));
         }
         setLoading(false);
       }
@@ -140,14 +151,16 @@ function ProfilePage() {
           ? form.interests.split(",").map((i) => i.trim()).filter(Boolean)
           : Array.isArray(form.interests) ? form.interests : [],
       });
-      setProfile((p) => ({
-        ...p,
+      const newProfile = {
+        ...profile,
         ...form,
         department: form.department || "",
         interests: typeof form.interests === "string"
           ? form.interests.split(",").map((i) => i.trim()).filter(Boolean)
           : Array.isArray(form.interests) ? form.interests : [],
-      }));
+      };
+      setProfile(newProfile);
+      localStorage.setItem('profile_page_profile', JSON.stringify(newProfile));
       setEditOpen(false);
     } catch (err) {
       setError("Failed to save profile. " + err.message);
@@ -314,6 +327,7 @@ function ProfilePage() {
           src={profile.photoURL || "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"}
           alt="Profile"
           style={{ width: 110, height: 110, borderRadius: "50%", objectFit: "cover", border: "4px solid #ffb6d5", boxShadow: "0 2px 8px #ff408133" }}
+          onError={e => { e.target.onerror = null; e.target.src = "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"; }}
         />
         <h2 style={{ margin: 0, color: "#ff4081", fontSize: 28, textAlign: 'center' }}>{profile.name || "Your Name"}</h2>
         {profile.pronouns && <span style={{ color: "#888", fontSize: 15, textAlign: 'center' }}>{profile.pronouns}</span>}

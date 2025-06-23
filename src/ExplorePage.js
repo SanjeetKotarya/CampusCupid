@@ -24,6 +24,13 @@ function ExplorePage() {
   const rafRef = useRef();
 
   useEffect(() => {
+    const cached = localStorage.getItem('explore_users');
+    if (cached) {
+      try {
+        setUsers(JSON.parse(cached));
+        setLoading(false);
+      } catch {}
+    }
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setCurrentUser(user);
@@ -49,6 +56,7 @@ function ExplorePage() {
         // Filter out matched users
         const filteredUsers = userList.filter((u) => !matchedUserIds.has(u.id));
         setUsers(filteredUsers);
+        localStorage.setItem('explore_users', JSON.stringify(filteredUsers));
         setLoading(false);
       }
     });
@@ -218,6 +226,7 @@ function ExplorePage() {
                   src={user.photoURL || "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"}
                   alt={user.name}
                   style={{ width: 110, height: 110, borderRadius: "50%", objectFit: "cover", border: "4px solid #ffb6d5", marginBottom: 12 }}
+                  onError={e => { e.target.onerror = null; e.target.src = "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"; }}
                 />
                 <h2 style={{ color: "#ff4081", margin: "8px 0 2px 0" }}>{user.name}</h2>
                 <div style={{ color: "#888", fontSize: 15, marginBottom: 2 }}>{user.pronouns}</div>

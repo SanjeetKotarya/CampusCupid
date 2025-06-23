@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { db, auth } from "./firebase";
-import { collection, getDocs, doc, getDoc, onSnapshot, deleteDoc, query } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, onSnapshot, deleteDoc, query, setDoc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import ChatWindow from "./ChatWindow";
 import { useNavigate } from "react-router-dom";
@@ -11,13 +11,24 @@ function getMatchId(uid1, uid2) {
 
 function MessagesPage() {
   const [matches, setMatches] = useState([]);
+  const [requests, setRequests] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [selectedMatch, setSelectedMatch] = useState(null);
   const [loading, setLoading] = useState(true);
   const [unmatchTarget, setUnmatchTarget] = useState(null);
+  const [tab, setTab] = useState('messages');
   const navigate = useNavigate();
+  const [touchStartX, setTouchStartX] = useState(null);
+  const [touchEndX, setTouchEndX] = useState(null);
 
   useEffect(() => {
+    const cached = localStorage.getItem('messages_matches');
+    if (cached) {
+      try {
+        setMatches(JSON.parse(cached));
+        setLoading(false);
+      } catch {}
+    }
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setCurrentUser(user);
@@ -41,64 +52,220 @@ function MessagesPage() {
             }
           }
           setMatches(userMatches);
+          localStorage.setItem('messages_matches', JSON.stringify(userMatches));
           setLoading(false);
         });
+        // Fetch requests (pending likes)
+        const fetchRequests = async () => {
+          // Users who liked me but are not matched
+          const likesSnapshot = await getDocs(collection(db, "users", user.uid, "likes"));
+          const myLikes = new Set();
+          likesSnapshot.forEach(doc => myLikes.add(doc.id));
+          // Get all users who liked me
+          const usersSnapshot = await getDocs(collection(db, "users"));
+          const requestsList = [];
+          for (const userDoc of usersSnapshot.docs) {
+            if (userDoc.id === user.uid) continue;
+            // Did this user like me?
+            const theirLikeDoc = await getDoc(doc(db, "users", userDoc.id, "likes", user.uid));
+            if (theirLikeDoc.exists() && !myLikes.has(userDoc.id)) {
+              requestsList.push({ id: userDoc.id, ...userDoc.data() });
+            }
+          }
+          setRequests(requestsList);
+        };
+        fetchRequests();
         return () => unsubscribe();
       }
     });
     return () => unsub();
   }, []);
 
+  const handleAcceptRequest = async (requestUser) => {
+    if (!currentUser) return;
+    // Like them back to create a match
+    await setDoc(doc(db, `users/${currentUser.uid}/likes`, requestUser.id), {
+      timestamp: Date.now(),
+    });
+    const matchId = getMatchId(currentUser.uid, requestUser.id);
+    await setDoc(doc(db, "matches", matchId), {
+      users: [currentUser.uid, requestUser.id],
+      timestamp: Date.now(),
+    });
+    // Remove from requests
+    setRequests(prev => prev.filter(u => u.id !== requestUser.id));
+  };
+
+  // Swipe gesture handlers
+  const handleTouchStart = (e) => {
+    if (e.touches && e.touches.length === 1) {
+      setTouchStartX(e.touches[0].clientX);
+      setTouchEndX(null);
+    }
+  };
+  const handleTouchMove = (e) => {
+    if (e.touches && e.touches.length === 1) {
+      setTouchEndX(e.touches[0].clientX);
+    }
+  };
+  const handleTouchEnd = () => {
+    if (touchStartX !== null && touchEndX !== null) {
+      const dx = touchEndX - touchStartX;
+      if (Math.abs(dx) > 60) {
+        if (dx < 0 && tab === 'messages') setTab('requests'); // swipe left
+        if (dx > 0 && tab === 'requests') setTab('messages'); // swipe right
+      }
+    }
+    setTouchStartX(null);
+    setTouchEndX(null);
+  };
+
   if (loading) return <div style={{ padding: 32, textAlign: "center" }}>Loading...</div>;
 
   return (
-    <div style={{ width: "100%", maxWidth: 430, margin: "0 auto", height: "calc(100vh - 70px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", position: "relative" }}>
-      <h2 style={{ color: "#ff4081", margin: "18px 0 10px 0", fontWeight: 700, fontSize: 24 }}>Messages</h2>
-      {matches.length === 0 ? (
-        <div style={{ color: "#bbb", fontSize: 20, marginTop: 40 }}>No matches yet</div>
-      ) : (
-        <div style={{ width: "100%" }}>
-          {matches.map((match) => (
-            <div
-              key={match.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                padding: "14px 18px",
-                borderBottom: "1px solid #f5c1e1",
-                cursor: "pointer",
-                position: "relative"
-              }}
-            >
-              <img
-                src={match.photoURL || "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"}
-                alt={match.name}
-                style={{ width: 48, height: 48, borderRadius: "50%", marginRight: 14, border: "2px solid #ffb6d5", cursor: "pointer" }}
-                onClick={e => { e.stopPropagation(); navigate(`/profile/${match.id}`); }}
-              />
-              <div style={{ flex: 1 }} onClick={() => setSelectedMatch(match)}>
-                <div style={{ color: "#ff4081", fontWeight: 600, fontSize: 18 }}>{match.name}</div>
-                <div style={{ color: "#888", fontSize: 14 }}>{match.gender}</div>
-              </div>
-              <button
-                style={{
-                  background: "#ffe0ec",
-                  color: "#ff4081",
-                  border: "none",
-                  borderRadius: 16,
-                  padding: "6px 14px",
-                  fontWeight: 600,
-                  fontSize: 13,
-                  marginLeft: 8,
-                  cursor: "pointer"
-                }}
-                onClick={e => { e.stopPropagation(); setUnmatchTarget(match); }}
-              >
-                Unmatch
-              </button>
+    <div
+      style={{ width: "100%", maxWidth: 430, margin: "0 auto", height: "calc(100vh - 70px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", position: "relative" }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Tabs */}
+      <div style={{ display: 'flex', width: '100%', borderBottom: '2px solid #ffe0ec', marginBottom: 8 }}>
+        <button
+          style={{
+            flex: 1,
+            padding: '14px 0',
+            background: 'none',
+            border: 'none',
+            color: tab === 'messages' ? '#ff4081' : '#bbb',
+            fontWeight: tab === 'messages' ? 700 : 500,
+            fontSize: 18,
+            borderBottom: tab === 'messages' ? '3px solid #ff4081' : 'none',
+            cursor: 'pointer',
+            transition: 'color 0.18s, border 0.18s',
+          }}
+          onClick={() => setTab('messages')}
+        >
+          Messages
+        </button>
+        <button
+          style={{
+            flex: 1,
+            padding: '14px 0',
+            background: 'none',
+            border: 'none',
+            color: tab === 'requests' ? '#ff4081' : '#bbb',
+            fontWeight: tab === 'requests' ? 700 : 500,
+            fontSize: 18,
+            borderBottom: tab === 'requests' ? '3px solid #ff4081' : 'none',
+            cursor: 'pointer',
+            transition: 'color 0.18s, border 0.18s',
+          }}
+          onClick={() => setTab('requests')}
+        >
+          Requests
+        </button>
+      </div>
+      {/* Tab Content */}
+      {tab === 'messages' ? (
+        <>
+          {matches.length === 0 ? (
+            <div style={{ color: "#bbb", fontSize: 20, marginTop: 40 }}>No matches yet</div>
+          ) : (
+            <div style={{ width: "100%" }}>
+              {matches.map((match) => (
+                <div
+                  key={match.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "14px 18px",
+                    borderBottom: "1px solid #f5c1e1",
+                    cursor: "pointer",
+                    position: "relative"
+                  }}
+                >
+                  <img
+                    src={match.photoURL || "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"}
+                    alt={match.name}
+                    style={{ width: 48, height: 48, borderRadius: "50%", marginRight: 14, border: "2px solid #ffb6d5", cursor: "pointer" }}
+                    onClick={e => { e.stopPropagation(); navigate(`/profile/${match.id}`); }}
+                    onError={e => { e.target.onerror = null; e.target.src = "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"; }}
+                  />
+                  <div style={{ flex: 1 }} onClick={() => setSelectedMatch(match)}>
+                    <div style={{ color: "#ff4081", fontWeight: 600, fontSize: 18 }}>{match.name}</div>
+                    <div style={{ color: "#888", fontSize: 14 }}>{match.gender}</div>
+                  </div>
+                  <button
+                    style={{
+                      background: "#ffe0ec",
+                      color: "#ff4081",
+                      border: "none",
+                      borderRadius: 16,
+                      padding: "6px 14px",
+                      fontWeight: 600,
+                      fontSize: 13,
+                      marginLeft: 8,
+                      cursor: "pointer"
+                    }}
+                    onClick={e => { e.stopPropagation(); setUnmatchTarget(match); }}
+                  >
+                    Unmatch
+                  </button>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+        </>
+      ) : (
+        <>
+          {requests.length === 0 ? (
+            <div style={{ color: "#bbb", fontSize: 20, marginTop: 40 }}>No requests yet</div>
+          ) : (
+            <div style={{ width: "100%" }}>
+              {requests.map((req) => (
+                <div
+                  key={req.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "14px 18px",
+                    borderBottom: "1px solid #f5c1e1",
+                    position: "relative"
+                  }}
+                >
+                  <img
+                    src={req.photoURL || "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"}
+                    alt={req.name}
+                    style={{ width: 48, height: 48, borderRadius: "50%", marginRight: 14, border: "2px solid #ffb6d5", cursor: "pointer" }}
+                    onClick={e => { e.stopPropagation(); navigate(`/profile/${req.id}`); }}
+                    onError={e => { e.target.onerror = null; e.target.src = "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"; }}
+                  />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: "#ff4081", fontWeight: 600, fontSize: 18 }}>{req.name}</div>
+                    <div style={{ color: "#888", fontSize: 14 }}>{req.gender}</div>
+                  </div>
+                  <button
+                    style={{
+                      background: "#ff4081",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 16,
+                      padding: "6px 18px",
+                      fontWeight: 600,
+                      fontSize: 14,
+                      marginLeft: 8,
+                      cursor: "pointer"
+                    }}
+                    onClick={() => handleAcceptRequest(req)}
+                  >
+                    Match
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
       {selectedMatch && currentUser && (
         <ChatWindow

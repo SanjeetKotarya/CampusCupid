@@ -15,12 +15,22 @@ function ChatWindow({ match, currentUser, onClose }) {
 
   useEffect(() => {
     if (!match?.matchId) return;
+    // Load cached messages first
+    const cacheKey = `chat_messages_${match.matchId}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      try {
+        setMessages(JSON.parse(cached));
+      } catch {}
+    }
     const q = query(
       collection(db, "chats", match.matchId, "messages"),
       orderBy("timestamp", "asc")
     );
     const unsub = onSnapshot(q, (snapshot) => {
-      setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setMessages(msgs);
+      localStorage.setItem(cacheKey, JSON.stringify(msgs));
     });
     return () => unsub();
   }, [match?.matchId]);
@@ -83,6 +93,7 @@ function ChatWindow({ match, currentUser, onClose }) {
           alt={match.name}
           style={{ width: 36, height: 36, borderRadius: "50%", marginRight: 8, cursor: "pointer", border: '2px solid #ffb6d5' }}
           onClick={() => navigate(`/profile/${match.id}`)}
+          onError={e => { e.target.onerror = null; e.target.src = "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"; }}
         />
         <span style={{ fontWeight: 600, color: "#ff4081" }}>{match.name}</span>
       </div>
