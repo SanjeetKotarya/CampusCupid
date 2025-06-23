@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { db, auth } from "./firebase";
-import { collection, getDocs, doc, getDoc, onSnapshot, deleteDoc, query, setDoc } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, onSnapshot, deleteDoc, query, setDoc, orderBy, limit } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import ChatWindow from "./ChatWindow";
 import { useNavigate } from "react-router-dom";
@@ -20,6 +20,48 @@ function MessagesPage() {
   const navigate = useNavigate();
   const [touchStartX, setTouchStartX] = useState(null);
   const [touchEndX, setTouchEndX] = useState(null);
+  const [newMessagesCount, setNewMessagesCount] = useState(0);
+  const prevTabRef = useRef(tab);
+
+  // Helper to get latest message timestamp for a match
+  async function getLatestMessageTimestamp(matchId) {
+    const messagesCol = collection(db, "chats", matchId, "messages");
+    const q = query(messagesCol, orderBy("timestamp", "desc"), limit(1));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const msg = snap.docs[0].data();
+      return msg.timestamp?.toMillis?.() || msg.timestamp || 0;
+    }
+    return 0;
+  }
+
+  // Helper to get count of new messages for a match
+  async function getNewMessagesCount(matchId, lastSeenTimestamp) {
+    const messagesCol = collection(db, "chats", matchId, "messages");
+    const q = query(messagesCol, orderBy("timestamp", "desc"));
+    const snap = await getDocs(q);
+    let count = 0;
+    snap.forEach(doc => {
+      const msg = doc.data();
+      const ts = msg.timestamp?.toMillis?.() || msg.timestamp || 0;
+      if (ts > (lastSeenTimestamp || 0)) count++;
+    });
+    return count;
+  }
+
+  const [matchNewMsgCounts, setMatchNewMsgCounts] = useState({});
+
+  // Update per-match new message counts when matches or last seen timestamps change
+  useEffect(() => {
+    const lastSeenTimestamps = JSON.parse(localStorage.getItem('messages_last_seen_timestamps') || '{}');
+    (async () => {
+      const counts = {};
+      for (const match of matches) {
+        counts[match.matchId] = await getNewMessagesCount(match.matchId, lastSeenTimestamps[match.matchId] || 0);
+      }
+      setMatchNewMsgCounts(counts);
+    })();
+  }, [matches]);
 
   useEffect(() => {
     const cached = localStorage.getItem('messages_matches');
@@ -47,13 +89,41 @@ function MessagesPage() {
                   ...otherDoc.data(),
                   id: otherId,
                   matchId: docSnap.id,
+                  matchTimestamp: data.timestamp || 0, // store match creation time
                 });
               }
             }
           }
-          setMatches(userMatches);
-          localStorage.setItem('messages_matches', JSON.stringify(userMatches));
+          // For each match, get the latest message timestamp
+          const matchesWithActivity = await Promise.all(userMatches.map(async (match) => {
+            const latestMsg = await getLatestMessageTimestamp(match.matchId);
+            return {
+              ...match,
+              latestActivity: latestMsg || match.matchTimestamp || 0,
+            };
+          }));
+          // Sort by latestActivity descending
+          matchesWithActivity.sort((a, b) => (b.latestActivity || 0) - (a.latestActivity || 0));
+          setMatches(matchesWithActivity);
+          localStorage.setItem('messages_matches', JSON.stringify(matchesWithActivity));
           setLoading(false);
+
+          // --- New matches and new messages notification logic ---
+          const lastSeenMatches = JSON.parse(localStorage.getItem('messages_last_seen_matches') || '[]');
+          const lastSeenTimestamps = JSON.parse(localStorage.getItem('messages_last_seen_timestamps') || '{}');
+          let newMatchCount = 0;
+          let newMsgCount = 0;
+          const currentMatchIds = matchesWithActivity.map(m => m.matchId);
+          // New matches
+          for (const id of currentMatchIds) {
+            if (!lastSeenMatches.includes(id)) newMatchCount++;
+          }
+          // New messages
+          for (const match of matchesWithActivity) {
+            const latest = await getLatestMessageTimestamp(match.matchId);
+            if (latest && latest > (lastSeenTimestamps[match.matchId] || 0)) newMsgCount++;
+          }
+          setNewMessagesCount(newMatchCount + newMsgCount);
         });
         // Fetch requests (pending likes)
         const fetchRequests = async () => {
@@ -80,6 +150,41 @@ function MessagesPage() {
     });
     return () => unsub();
   }, []);
+
+  // When user visits the Messages tab, update last seen
+  useEffect(() => {
+    let cancelled = false;
+    // Only update if switching from another tab to 'messages'
+    if (prevTabRef.current !== 'messages' && tab === 'messages' && matches.length > 0) {
+      localStorage.setItem('messages_last_seen_matches', JSON.stringify(matches.map(m => m.matchId)));
+      (async () => {
+        const timestamps = {};
+        for (const match of matches) {
+          timestamps[match.matchId] = await getLatestMessageTimestamp(match.matchId);
+        }
+        localStorage.setItem('messages_last_seen_timestamps', JSON.stringify(timestamps));
+        if (!cancelled) setNewMessagesCount(0);
+      })();
+    }
+    prevTabRef.current = tab;
+    return () => { cancelled = true; };
+    // eslint-disable-next-line
+  }, [tab, matches.length]);
+
+  // When a chat is opened, update last seen timestamp for that match
+  useEffect(() => {
+    if (selectedMatch && selectedMatch.matchId) {
+      (async () => {
+        const latest = await getLatestMessageTimestamp(selectedMatch.matchId);
+        // Update localStorage for this match
+        const lastSeenTimestamps = JSON.parse(localStorage.getItem('messages_last_seen_timestamps') || '{}');
+        lastSeenTimestamps[selectedMatch.matchId] = latest;
+        localStorage.setItem('messages_last_seen_timestamps', JSON.stringify(lastSeenTimestamps));
+        // Update the per-match new message count
+        setMatchNewMsgCounts(prev => ({ ...prev, [selectedMatch.matchId]: 0 }));
+      })();
+    }
+  }, [selectedMatch]);
 
   const handleAcceptRequest = async (requestUser) => {
     if (!currentUser) return;
@@ -143,10 +248,11 @@ function MessagesPage() {
             borderBottom: tab === 'messages' ? '3px solid #ff4081' : 'none',
             cursor: 'pointer',
             transition: 'color 0.18s, border 0.18s',
+            position: 'relative',
           }}
           onClick={() => setTab('messages')}
         >
-          Messages
+          Matches
         </button>
         <button
           style={{
@@ -216,6 +322,25 @@ function MessagesPage() {
                     <div style={{ color: "#ff4081", fontWeight: 600, fontSize: 18 }}>{match.name}</div>
                     <div style={{ color: "#888", fontSize: 14 }}>{match.gender}</div>
                   </div>
+                  {matchNewMsgCounts[match.matchId] > 0 && (
+                    <span style={{
+                      position: 'absolute',
+                      top: 10,
+                      left: 38,
+                      background: '#ff4081',
+                      color: '#fff',
+                      borderRadius: '50%',
+                      width: 20,
+                      height: 20,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      fontFamily: 'monospace',
+                      boxShadow: '0 2px 8px #ff408122',
+                    }}>{matchNewMsgCounts[match.matchId]}</span>
+                  )}
                   <button
                     style={{
                       background: "#ffe0ec",

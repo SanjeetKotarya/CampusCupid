@@ -57,6 +57,7 @@ function AuthPage() {
             value={email}
             onChange={e => setEmail(e.target.value)}
             className="auth-input"
+            disabled
           />
           <input
             type="password"
@@ -64,11 +65,12 @@ function AuthPage() {
             value={password}
             onChange={e => setPassword(e.target.value)}
             className="auth-input"
+            disabled
           />
-          <button onClick={handleSignIn} className="auth-btn primary">
+          <button onClick={handleSignIn} className="auth-btn primary" disabled>
             Sign In
           </button>
-          <button onClick={handleSignUp} className="auth-btn secondary">
+          <button onClick={handleSignUp} className="auth-btn secondary" disabled>
             Sign Up
           </button>
         </form>
@@ -76,6 +78,9 @@ function AuthPage() {
         <button onClick={handleGoogleSignIn} className="auth-btn google">
           <span className="google-icon">G</span> Continue with Google
         </button>
+        <div className="auth-info-message" style={{ marginTop: '16px', fontSize: '0.95em', color: '#555', textAlign: 'center' }}>
+          “We use Google Sign-In through Firebase. We do not store or access your password — authentication is handled securely by Google, and we only receive your email and public profile information.”
+        </div>
         {error && <div className="auth-error">{error}</div>}
       </div>
     </div>
