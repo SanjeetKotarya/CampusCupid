@@ -209,29 +209,15 @@ function ChatWindow({ match, currentUser, onClose }) {
 
   // Audio Call button handler (caller)
   const handleStartAudioCall = async () => {
-    // 1. Create peer connection
-    const pc = new window.RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-    pcRef.current = pc;
-    // 2. Get local audio
-    let localStream;
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (err) {
-      alert('Could not access microphone.');
-      return;
-    }
-    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-    // 3. Create offer
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    // 4. Write offer to Firestore
+    // Only set up call state and write a placeholder offer
     const newCallId = `${currentUser.uid}_${Date.now()}`;
     setCallIdLogged(newCallId);
     setIsCaller(true);
     setAudioCallOpenLogged(true);
+    // Write a placeholder offer with callerId (no SDP yet)
     await setDoc(doc(db, "chats", match.matchId, "calls", newCallId), {
       type: 'offer',
-      offer: { sdp: offer.sdp, type: offer.type, callerId: currentUser.uid }
+      offer: { callerId: currentUser.uid }
     });
   };
 

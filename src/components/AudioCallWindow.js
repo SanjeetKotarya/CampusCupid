@@ -91,6 +91,7 @@ function AudioCallWindow({
   const [answerSent, setAnswerSent] = useState(false);
   const iceCandidateQueue = useRef([]);
   const remoteDescSet = useRef(false);
+  const [offerSent, setOfferSent] = useState(false);
 
   const addQueuedIceCandidates = async () => {
     if (remoteDescSet.current && pcRef.current && iceCandidateQueue.current.length > 0) {
@@ -155,12 +156,13 @@ function AudioCallWindow({
         }
       };
 
-      if (isCaller) {
+      if (isCaller && !offerSent) {
         try {
           const offer = await pc.createOffer();
           if (cancelled || !pcRef.current || pcRef.current.signalingState === 'closed') return;
           await pc.setLocalDescription(offer);
           signalingSend({ type: 'offer', offer: { sdp: offer.sdp, type: offer.type } });
+          setOfferSent(true);
         } catch (err) {
           setError('Failed to create/send offer: ' + err.message);
           setFatalError(true);
@@ -183,11 +185,11 @@ function AudioCallWindow({
     return () => {
       cleanupRef.current.forEach(fn => fn());
     };
-  }, []);
+  }, [isCaller, offerSent]);
 
   useEffect(() => {
     async function handleOffer() {
-      if (!isCaller && pendingOffer && pcRef.current && !answerSent) {
+      if (!isCaller && pendingOffer && pendingOffer.sdp && pcRef.current && !answerSent) {
         try {
           await pcRef.current.setRemoteDescription(new RTCSessionDescription(pendingOffer));
           remoteDescSet.current = true;
@@ -210,9 +212,16 @@ function AudioCallWindow({
       if (!msg) return;
       try {
         if (msg.type === 'answer' && isCaller) {
-          await pcRef.current.setRemoteDescription(new RTCSessionDescription(msg.answer));
-          remoteDescSet.current = true;
-          await addQueuedIceCandidates();
+          const pc = pcRef.current;
+          console.log('[AudioCallWindow] Received answer. Current signalingState:', pc?.signalingState);
+          if (pc && pc.signalingState === 'have-local-offer') {
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+            remoteDescSet.current = true;
+            await addQueuedIceCandidates();
+            console.log('[AudioCallWindow] setRemoteDescription(answer) success. New signalingState:', pc.signalingState);
+          } else {
+            console.warn('[AudioCallWindow] Skipped setRemoteDescription(answer) because signalingState is', pc?.signalingState);
+          }
         } else if (msg.type === 'ice') {
           if (!remoteDescSet.current) {
             iceCandidateQueue.current.push(msg.candidate);
