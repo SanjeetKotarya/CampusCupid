@@ -1,17 +1,17 @@
 {
   "files": {
     "main.css": "/CampusCupid/static/css/main.b5ebd706.css",
-    "main.js": "/CampusCupid/static/js/main.f9ffca51.js",
+    "main.js": "/CampusCupid/static/js/main.61a5991e.js",
     "static/js/488.92c8c6bf.chunk.js": "/CampusCupid/static/js/488.92c8c6bf.chunk.js",
     "static/media/test-tone.mp3": "/CampusCupid/static/media/test-tone.b6777b1ff97f626a59e7.mp3",
     "service-worker.js": "/CampusCupid/service-worker.js",
     "index.html": "/CampusCupid/index.html",
     "main.b5ebd706.css.map": "/CampusCupid/static/css/main.b5ebd706.css.map",
-    "main.f9ffca51.js.map": "/CampusCupid/static/js/main.f9ffca51.js.map",
+    "main.61a5991e.js.map": "/CampusCupid/static/js/main.61a5991e.js.map",
     "488.92c8c6bf.chunk.js.map": "/CampusCupid/static/js/488.92c8c6bf.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.b5ebd706.css",
-    "static/js/main.f9ffca51.js"
+    "static/js/main.61a5991e.js"
   ]
 }
