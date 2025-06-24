@@ -56,11 +56,13 @@ function BottomNav() {
 function AppContent() {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [authChecked, setAuthChecked] = useState(false);
+    const [currentUser, setCurrentUser] = useState(null);
     const location = useLocation();
 
     useEffect(() => {
         const unsubscribe = auth.onAuthStateChanged((user) => {
             setIsAuthenticated(!!user);
+            setCurrentUser(user);
             setAuthChecked(true);
         });
         return () => unsubscribe();
@@ -77,7 +79,7 @@ function AppContent() {
             <Routes>
                 <Route path="/auth" element={isAuthenticated ? <Navigate to="/explore" /> : <AuthPage />} />
                 <Route path="/explore" element={isAuthenticated ? <ExplorePage /> : <Navigate to="/auth" />} />
-                <Route path="/messages" element={isAuthenticated ? <MessagesPage /> : <Navigate to="/auth" />} />
+                <Route path="/messages" element={isAuthenticated ? <MessagesPage currentUser={currentUser} /> : <Navigate to="/auth" />} />
                 <Route path="/profile" element={isAuthenticated ? <ProfilePage /> : <Navigate to="/auth" />} />
                 <Route path="/profile/:userId" element={isAuthenticated ? <UserProfilePage /> : <Navigate to="/auth" />} />
                 <Route path="*" element={<Navigate to={isAuthenticated ? "/explore" : "/auth"} />} />

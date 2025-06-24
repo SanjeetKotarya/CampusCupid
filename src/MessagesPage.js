@@ -10,11 +10,10 @@ function getMatchId(uid1, uid2) {
   return [uid1, uid2].sort().join("_");
 }
 
-function MessagesPage() {
+function MessagesPage({ currentUser }) {
   const [matches, setMatches] = useState([]);
   const [requests, setRequests] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [selectedMatch, setSelectedMatch] = useState(null);
+  const [selectedMatchId, setSelectedMatchId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [unmatchTarget, setUnmatchTarget] = useState(null);
   const [tab, setTab] = useState('messages');
@@ -24,6 +23,9 @@ function MessagesPage() {
   const [newMessagesCount, setNewMessagesCount] = useState(0);
   const prevTabRef = useRef(tab);
   const [unmatching, setUnmatching] = useState(null);
+
+  // Derive selectedMatch from matches and selectedMatchId
+  const selectedMatch = matches.find(m => m.matchId === selectedMatchId) || null;
 
   // Helper to get latest message timestamp for a match
   async function getLatestMessageTimestamp(matchId) {
@@ -73,85 +75,93 @@ function MessagesPage() {
         setLoading(false);
       } catch {}
     }
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setCurrentUser(user);
-        // Listen for matches
-        const q = collection(db, "matches");
-        const unsubscribe = onSnapshot(q, async (snapshot) => {
-          const userMatches = [];
-          for (const docSnap of snapshot.docs) {
-            const data = docSnap.data();
-            if (data.users.includes(user.uid)) {
-              // Get the other user's info
-              const otherId = data.users.find((id) => id !== user.uid);
-              const otherDoc = await getDoc(doc(db, "users", otherId));
-              if (otherDoc.exists()) {
-                userMatches.push({
-                  ...otherDoc.data(),
-                  id: otherId,
-                  matchId: docSnap.id,
-                  matchTimestamp: data.timestamp || 0, // store match creation time
-                });
-              }
-            }
+    if (!currentUser) return;
+    // Listen for matches
+    const q = collection(db, "matches");
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      const userMatches = [];
+      for (const docSnap of snapshot.docs) {
+        const data = docSnap.data();
+        if (data.users.includes(currentUser.uid)) {
+          // Get the other user's info
+          const otherId = data.users.find((id) => id !== currentUser.uid);
+          const otherDoc = await getDoc(doc(db, "users", otherId));
+          if (otherDoc.exists()) {
+            userMatches.push({
+              ...otherDoc.data(),
+              id: otherId,
+              matchId: docSnap.id,
+              matchTimestamp: data.timestamp || 0, // store match creation time
+            });
           }
-          // For each match, get the latest message timestamp
-          const matchesWithActivity = await Promise.all(userMatches.map(async (match) => {
-            const latestMsg = await getLatestMessageTimestamp(match.matchId);
-            return {
-              ...match,
-              latestActivity: latestMsg || match.matchTimestamp || 0,
-            };
-          }));
-          // Sort by latestActivity descending
-          matchesWithActivity.sort((a, b) => (b.latestActivity || 0) - (a.latestActivity || 0));
-          setMatches(matchesWithActivity);
-          localStorage.setItem('messages_matches', JSON.stringify(matchesWithActivity));
-          setLoading(false);
-
-          // --- New matches and new messages notification logic ---
-          const lastSeenMatches = JSON.parse(localStorage.getItem('messages_last_seen_matches') || '[]');
-          const lastSeenTimestamps = JSON.parse(localStorage.getItem('messages_last_seen_timestamps') || '{}');
-          let newMatchCount = 0;
-          let newMsgCount = 0;
-          const currentMatchIds = matchesWithActivity.map(m => m.matchId);
-          // New matches
-          for (const id of currentMatchIds) {
-            if (!lastSeenMatches.includes(id)) newMatchCount++;
-          }
-          // New messages
-          for (const match of matchesWithActivity) {
-            const latest = await getLatestMessageTimestamp(match.matchId);
-            if (latest && latest > (lastSeenTimestamps[match.matchId] || 0)) newMsgCount++;
-          }
-          setNewMessagesCount(newMatchCount + newMsgCount);
-        });
-        // Fetch requests (pending likes) once on load
-        const fetchRequests = async () => {
-          // Users who liked me but are not matched
-          const likesSnapshot = await getDocs(collection(db, "users", user.uid, "likes"));
-          const myLikes = new Set();
-          likesSnapshot.forEach(doc => myLikes.add(doc.id));
-          // Get all users who liked me
-          const usersSnapshot = await getDocs(collection(db, "users"));
-          const requestsList = [];
-          for (const userDoc of usersSnapshot.docs) {
-            if (userDoc.id === user.uid) continue;
-            // Did this user like me?
-            const theirLikeDoc = await getDoc(doc(db, "users", userDoc.id, "likes", user.uid));
-            if (theirLikeDoc.exists() && !myLikes.has(userDoc.id)) {
-              requestsList.push({ id: userDoc.id, ...userDoc.data() });
-            }
-          }
-          setRequests(requestsList);
-        };
-        fetchRequests();
-        return () => { unsubscribe(); };
+        }
       }
+      // For each match, get the latest message timestamp
+      const matchesWithActivity = await Promise.all(userMatches.map(async (match) => {
+        const latestMsg = await getLatestMessageTimestamp(match.matchId);
+        return {
+          ...match,
+          latestActivity: latestMsg || match.matchTimestamp || 0,
+        };
+      }));
+      // Sort by latestActivity descending
+      matchesWithActivity.sort((a, b) => (b.latestActivity || 0) - (a.latestActivity || 0));
+      setMatches(matchesWithActivity);
+      // --- Preserve selectedMatch reference if possible ---
+      if (selectedMatchId) {
+        const found = matchesWithActivity.find(m => m.matchId === selectedMatchId);
+        if (found) {
+          // Only update if reference is different
+          if (found !== selectedMatch) {
+            setSelectedMatchIdLogged(found.matchId);
+          }
+        } else {
+          // If match no longer exists, close chat
+          setSelectedMatchIdLogged(null);
+        }
+      }
+      localStorage.setItem('messages_matches', JSON.stringify(matchesWithActivity));
+      setLoading(false);
+
+      // --- New matches and new messages notification logic ---
+      const lastSeenMatches = JSON.parse(localStorage.getItem('messages_last_seen_matches') || '[]');
+      const lastSeenTimestamps = JSON.parse(localStorage.getItem('messages_last_seen_timestamps') || '{}');
+      let newMatchCount = 0;
+      let newMsgCount = 0;
+      const currentMatchIds = matchesWithActivity.map(m => m.matchId);
+      // New matches
+      for (const id of currentMatchIds) {
+        if (!lastSeenMatches.includes(id)) newMatchCount++;
+      }
+      // New messages
+      for (const match of matchesWithActivity) {
+        const latest = await getLatestMessageTimestamp(match.matchId);
+        if (latest && latest > (lastSeenTimestamps[match.matchId] || 0)) newMsgCount++;
+      }
+      setNewMessagesCount(newMatchCount + newMsgCount);
     });
-    return () => unsub();
-  }, []);
+    // Fetch requests (pending likes) once on load
+    const fetchRequests = async () => {
+      // Users who liked me but are not matched
+      const likesSnapshot = await getDocs(collection(db, "users", currentUser.uid, "likes"));
+      const myLikes = new Set();
+      likesSnapshot.forEach(doc => myLikes.add(doc.id));
+      // Get all users who liked me
+      const usersSnapshot = await getDocs(collection(db, "users"));
+      const requestsList = [];
+      for (const userDoc of usersSnapshot.docs) {
+        if (userDoc.id === currentUser.uid) continue;
+        // Did this user like me?
+        const theirLikeDoc = await getDoc(doc(db, "users", userDoc.id, "likes", currentUser.uid));
+        if (theirLikeDoc.exists() && !myLikes.has(userDoc.id)) {
+          requestsList.push({ id: userDoc.id, ...userDoc.data() });
+        }
+      }
+      setRequests(requestsList);
+    };
+    fetchRequests();
+    return () => { unsubscribe(); };
+  }, [currentUser]);
 
   // When user visits the Messages tab, update last seen
   useEffect(() => {
@@ -175,22 +185,22 @@ function MessagesPage() {
 
   // When a chat is opened, update last seen timestamp for that match
   useEffect(() => {
-    if (selectedMatch && selectedMatch.matchId) {
+    if (selectedMatchId && selectedMatchId) {
       (async () => {
-        const latest = await getLatestMessageTimestamp(selectedMatch.matchId);
+        const latest = await getLatestMessageTimestamp(selectedMatchId);
         // Update localStorage for this match
         const lastSeenTimestamps = JSON.parse(localStorage.getItem('messages_last_seen_timestamps') || '{}');
-        lastSeenTimestamps[selectedMatch.matchId] = latest;
+        lastSeenTimestamps[selectedMatchId] = latest;
         localStorage.setItem('messages_last_seen_timestamps', JSON.stringify(lastSeenTimestamps));
         // Update the per-match new message count
-        setMatchNewMsgCounts(prev => ({ ...prev, [selectedMatch.matchId]: 0 }));
+        setMatchNewMsgCounts(prev => ({ ...prev, [selectedMatchId]: 0 }));
       })();
     }
-  }, [selectedMatch]);
+  }, [selectedMatchId]);
 
   // When chat window is closed, update last seen timestamp and unread count
   useEffect(() => {
-    if (!selectedMatch) {
+    if (!selectedMatchId) {
       // Chat window closed, update all unread counts
       const lastSeenTimestamps = JSON.parse(localStorage.getItem('messages_last_seen_timestamps') || '{}');
       (async () => {
@@ -201,7 +211,7 @@ function MessagesPage() {
         setMatchNewMsgCounts(counts);
       })();
     }
-  }, [selectedMatch, matches]);
+  }, [selectedMatchId, matches]);
 
   // Real-time unread count update for each match
   useEffect(() => {
@@ -221,7 +231,7 @@ function MessagesPage() {
             return;
           }
           // If chat is open, don't increment unread
-          if (selectedMatch && selectedMatch.matchId === match.matchId) {
+          if (selectedMatchId === match.matchId) {
             setMatchNewMsgCounts(prev => ({ ...prev, [match.matchId]: 0 }));
             return;
           }
@@ -236,7 +246,7 @@ function MessagesPage() {
     return () => {
       unsubscribes.forEach(unsub => unsub());
     };
-  }, [matches, selectedMatch, currentUser]);
+  }, [matches, selectedMatchId, currentUser]);
 
   const handleAcceptRequest = async (requestUser) => {
     if (!currentUser) return;
@@ -275,6 +285,12 @@ function MessagesPage() {
     }
     setTouchStartX(null);
     setTouchEndX(null);
+  };
+
+  // Add a logging wrapper for setSelectedMatchId
+  const setSelectedMatchIdLogged = (val) => {
+    console.log('[MessagesPage] setSelectedMatchId called with', val, new Error().stack);
+    setSelectedMatchId(val);
   };
 
   if (loading) return <LoadingSpinner fullScreen text="Loading..." />;
@@ -399,7 +415,7 @@ function MessagesPage() {
                       onClick={e => { e.stopPropagation(); navigate(`/profile/${match.id}`); }}
                       onError={e => { e.target.onerror = null; e.target.src = "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"; }}
                     />
-                    <div style={{ flex: 1 }} onClick={() => setSelectedMatch(match)}>
+                    <div style={{ flex: 1 }} onClick={() => setSelectedMatchIdLogged(match.matchId)}>
                       <div style={{ color: "#ff4081", fontWeight: 600, fontSize: 18 }}>{match.name}</div>
                       <div style={{ color: "#888", fontSize: 14 }}>{match.gender}</div>
                     </div>
@@ -501,9 +517,10 @@ function MessagesPage() {
       )}
       {selectedMatch && currentUser && (
         <ChatWindow
+          key={selectedMatch.matchId}
           match={selectedMatch}
           currentUser={currentUser}
-          onClose={() => setSelectedMatch(null)}
+          onClose={() => setSelectedMatchIdLogged(null)}
         />
       )}
       {unmatchTarget && (
@@ -535,7 +552,7 @@ function MessagesPage() {
                 ]);
                 // Update UI
                 setMatches(prev => prev.filter(m => m.id !== otherUserId));
-                if (selectedMatch?.id === otherUserId) setSelectedMatch(null);
+                if (selectedMatch?.id === otherUserId) setSelectedMatchIdLogged(null);
                 setUnmatching(null); // Remove spinner
                 // Remove cached chat messages for this match
                 localStorage.removeItem(`chat_messages_${matchId}`);
