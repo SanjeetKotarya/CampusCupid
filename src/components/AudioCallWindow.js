@@ -101,14 +101,20 @@ function AudioCallWindow({
 
   const addQueuedIceCandidates = async () => {
     if (remoteDescSet.current && pcRef.current && iceCandidateQueue.current.length > 0) {
+      console.log('[AudioCallWindow] Adding all queued ICE candidates:', iceCandidateQueue.current.length);
       for (const candidate of iceCandidateQueue.current) {
         try {
           await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+          console.log('[AudioCallWindow] addQueuedIceCandidates: addIceCandidate success', candidate);
         } catch (err) {
-          console.error('AudioCallWindow: Failed to add queued ICE candidate', err);
+          console.error('[AudioCallWindow] addQueuedIceCandidates: Failed to add ICE candidate', err, candidate);
         }
       }
       iceCandidateQueue.current = [];
+    } else {
+      if (!remoteDescSet.current) console.log('[AudioCallWindow] addQueuedIceCandidates: remoteDescSet not set yet');
+      if (!pcRef.current) console.log('[AudioCallWindow] addQueuedIceCandidates: pcRef not set yet');
+      if (iceCandidateQueue.current.length === 0) console.log('[AudioCallWindow] addQueuedIceCandidates: No candidates to add');
     }
   };
 
