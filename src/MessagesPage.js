@@ -363,13 +363,21 @@ function MessagesPage({ currentUser }) {
     const newCallId = `${currentUser.uid}_${Date.now()}`;
     setCallIdLogged(newCallId);
     setIsCaller(true);
-    setAudioCallOpenLogged(true);
-    setSelectedMatchIdLogged(match.matchId); // Open chat with this match if not already
-    setDoc(doc(db, "chats", match.matchId, "calls", newCallId), {
-      type: 'offer',
-      offer: { callerId: currentUser.uid }
-    });
+    setSelectedMatchIdLogged(match.matchId); // Only set selectedMatchId here
+    // Do NOT open call window or send offer yet
   };
+
+  // Open call window and send offer only after selectedMatch is set
+  useEffect(() => {
+    if (isCaller && callId && selectedMatch && !audioCallOpen) {
+      setAudioCallOpenLogged(true);
+      setDoc(doc(db, "chats", selectedMatch.matchId, "calls", callId), {
+        type: 'offer',
+        offer: { callerId: currentUser.uid }
+      });
+    }
+    // eslint-disable-next-line
+  }, [isCaller, callId, selectedMatch]);
 
   // Accept/decline handlers for global incoming call
   const handleAcceptCall = () => {

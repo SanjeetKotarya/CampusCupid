@@ -99,6 +99,7 @@ function AudioCallWindow({
   remoteUserPhotoURL,
   pendingOffer,
 }) {
+  console.log('[AudioCallWindow] remoteUserPhotoURL:', remoteUserPhotoURL);
   const [callActive, setCallActive] = useState(false);
   const [error, setError] = useState('');
   const [fatalError, setFatalError] = useState(false);
@@ -427,9 +428,21 @@ function AudioCallWindow({
       }}>
         {/* Profile Picture */}
         <img
-          src={remoteUserPhotoURL || 'https://api.dicebear.com/7.x/person/svg?seed=CampusCupid'}
+          key={remoteUserPhotoURL || 'fallback'}
+          src={remoteUserPhotoURL ? remoteUserPhotoURL : 'https://api.dicebear.com/7.x/person/svg?seed=CampusCupid'}
           alt={remoteUserName || 'User'}
-          style={{ width: 96, height: 96, borderRadius: '50%', objectFit: 'cover', marginTop: 48, marginBottom: 28, border: '4px solid #fff', boxShadow: '0 2px 16px #ff408122' }}
+          style={{
+            width: 96,
+            height: 96,
+            borderRadius: '50%',
+            objectFit: 'cover',
+            marginTop: 48,
+            marginBottom: 28,
+            border: '4px solid #fff',
+            boxShadow: '0 2px 16px #ff408122',
+            background: '#f8f8f8', // fallback background
+            display: 'block'
+          }}
           onError={e => { e.target.onerror = null; e.target.src = 'https://api.dicebear.com/7.x/person/svg?seed=CampusCupid'; }}
         />
         {/* Remote User Name */}
@@ -446,9 +459,8 @@ function AudioCallWindow({
             <div style={{ fontSize: 40, color: '#ff4081', fontWeight: 700, textAlign: 'center', margin: '0 0 8px 0' }}>
               {ringCountdown}
             </div>
-            {/* Info message about call system not working yet */}
             <div style={{ fontSize: 13, color: '#888', textAlign: 'center', marginBottom: 40 }}>
-              This calling feature doesn&apos;t work yet. It will come soon!
+              Audio calling doesn&apos;t work yet. This feature is coming soon.
             </div>
           </>
         )}
