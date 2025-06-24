@@ -154,6 +154,7 @@ function AudioCallWindow({
             autoGainControl: true
           }
         });
+        console.log('[AudioCallWindow] localStream tracks:', localStream.getTracks());
         if (cancelled || !pcRef.current || pcRef.current.signalingState === 'closed') {
           setError('Call was cancelled or connection closed before microphone could be accessed.');
           setFatalError(true);
