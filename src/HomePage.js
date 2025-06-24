@@ -2,10 +2,13 @@ import React, { useEffect, useState } from "react";
 import { auth } from "./firebase";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { useNavigate } from "react-router-dom";
+import LoadingSpinner from "./components/LoadingSpinner";
+import { clearAllCache } from "./utils/cacheManager";
 
 function HomePage() {
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -19,11 +22,14 @@ function HomePage() {
   }, [navigate]);
 
   const handleSignOut = async () => {
+    setLoggingOut(true);
+    clearAllCache();
     await signOut(auth);
+    setLoggingOut(false);
     navigate("/auth");
   };
 
-  if (!user) return null;
+  if (!user || loggingOut) return <LoadingSpinner fullScreen text="Loading..." />;
 
   return (
     <div style={{ maxWidth: 400, margin: "auto", padding: 20 }}>

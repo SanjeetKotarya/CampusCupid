@@ -6,6 +6,8 @@ import { useNavigate } from "react-router-dom";
 import { FaBars } from "react-icons/fa";
 import { storage } from "./firebase";
 import { ref, uploadBytes, getDownloadURL, deleteObject, uploadBytesResumable } from "firebase/storage";
+import LoadingSpinner from "./components/LoadingSpinner";
+import { clearAllCache } from "./utils/cacheManager";
 
 const years = ["1st Year", "2nd Year", "3rd Year", "4th Year", "Other"];
 const genders = ["Male", "Female", "Other"];
@@ -154,6 +156,7 @@ function ProfilePage() {
   const [galleryConfirmOpen, setGalleryConfirmOpen] = useState(false);
   const [galleryToDelete, setGalleryToDelete] = useState(null);
   const [galleryLoading, setGalleryLoading] = useState({});
+  const [loggingOut, setLoggingOut] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -215,7 +218,10 @@ function ProfilePage() {
   };
 
   const handleSignOut = async () => {
+    setLoggingOut(true);
+    clearAllCache();
     await signOut(auth);
+    setLoggingOut(false);
     navigate("/auth");
   };
 
@@ -256,7 +262,8 @@ function ProfilePage() {
       }
       // 4. Delete user document
       await deleteDoc(doc(db, "users", user.uid));
-      // 5. Sign out and redirect
+      // 5. Clear cache, sign out and redirect
+      clearAllCache();
       await signOut(auth);
       navigate("/auth");
     } catch (err) {
@@ -328,7 +335,7 @@ function ProfilePage() {
     }
   };
 
-  if (loading) return <div style={{ padding: 32, textAlign: "center" }}>Loading...</div>;
+  if (loading || loggingOut) return <LoadingSpinner fullScreen text="Loading..." />;
 
   return (
     <div style={{ maxWidth: 430, width: '100%', margin: '0 auto', boxSizing: 'border-box', padding: '0 18px 54px 18px', display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>

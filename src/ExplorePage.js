@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { db, auth } from "./firebase";
 import { collection, getDocs, doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
+import LoadingSpinner from "./components/LoadingSpinner";
 
 function clamp(val, min, max) {
   return Math.max(min, Math.min(max, val));
@@ -89,8 +90,14 @@ function ExplorePage() {
     const clientY = isTouch ? e.touches[0].clientY : e.clientY;
     dragPos.current = { x: 0, y: 0, startX: clientX, startY: clientY, isDragging: true, lockDirection: null };
     if (cardRef.current) cardRef.current.style.transition = '';
-    document.addEventListener(isTouch ? "touchmove" : "mousemove", handleDragMove, { passive: false });
-    document.addEventListener(isTouch ? "touchend" : "mouseup", handleDragEnd);
+    if (isTouch) {
+      document.addEventListener("touchmove", handleDragMove, { passive: false });
+      document.addEventListener("touchend", handleDragEnd, { passive: false });
+      document.addEventListener("touchcancel", handleDragEnd, { passive: false });
+    } else {
+      document.addEventListener("mousemove", handleDragMove);
+      document.addEventListener("mouseup", handleDragEnd);
+    }
   };
   const handleDragMove = (e) => {
     if (!dragPos.current.isDragging) return;
@@ -127,6 +134,12 @@ function ExplorePage() {
       if (dragPos.current.x > 120) dir = "right";
       if (dragPos.current.x < -120) dir = "left";
     }
+    // Always clean up listeners
+    document.removeEventListener("mousemove", handleDragMove);
+    document.removeEventListener("mouseup", handleDragEnd);
+    document.removeEventListener("touchmove", handleDragMove);
+    document.removeEventListener("touchend", handleDragEnd);
+    document.removeEventListener("touchcancel", handleDragEnd);
     if (dir) {
       if (cardRef.current) cardRef.current.style.transition = 'transform 0.25s cubic-bezier(.4,1.5,.5,1)';
       if (cardRef.current) cardRef.current.style.transform = `translate(${dir === "right" ? 500 : -500}px, 0px) rotate(${dir === "right" ? 30 : -30}deg)`;
@@ -143,17 +156,18 @@ function ExplorePage() {
         setRemovingId(null);
       }, 250);
     } else {
-      if (cardRef.current) cardRef.current.style.transition = 'transform 0.18s';
-      if (cardRef.current) cardRef.current.style.transform = '';
+      // Always reset card position if not swiped far enough
+      if (cardRef.current) {
+        cardRef.current.style.transition = 'transform 0.18s';
+        cardRef.current.style.transform = '';
+      }
+      dragPos.current = { x: 0, y: 0, isDragging: false, lockDirection: null };
     }
-    dragPos.current = { x: 0, y: 0 };
-    document.removeEventListener("mousemove", handleDragMove);
-    document.removeEventListener("mouseup", handleDragEnd);
-    document.removeEventListener("touchmove", handleDragMove);
-    document.removeEventListener("touchend", handleDragEnd);
+    // Always reset drag state
+    dragPos.current.isDragging = false;
   };
 
-  if (loading) return <div style={{ padding: 32, textAlign: "center" }}>Loading...</div>;
+  if (loading) return <LoadingSpinner fullScreen text="Loading..." />;
 
   return (
     <div style={{ width: "100%", maxWidth: 430, margin: "0 auto", height: "calc(100vh - 70px)", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", paddingTop: 48 }}>

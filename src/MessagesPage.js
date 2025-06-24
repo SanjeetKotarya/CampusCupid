@@ -4,6 +4,7 @@ import { collection, getDocs, doc, getDoc, onSnapshot, deleteDoc, query, setDoc,
 import { onAuthStateChanged } from "firebase/auth";
 import ChatWindow from "./ChatWindow";
 import { useNavigate } from "react-router-dom";
+import LoadingSpinner from "./components/LoadingSpinner";
 
 function getMatchId(uid1, uid2) {
   return [uid1, uid2].sort().join("_");
@@ -225,7 +226,7 @@ function MessagesPage() {
     setTouchEndX(null);
   };
 
-  if (loading) return <div style={{ padding: 32, textAlign: "center" }}>Loading...</div>;
+  if (loading) return <LoadingSpinner fullScreen text="Loading..." />;
 
   return (
     <div
