@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import testSound from '../test-tone.mp3'; // You will need to add a short mp3 file in src/
 
 // Audio level meter component
 const AudioLevelMeter = ({ stream }) => {
@@ -95,6 +96,8 @@ function AudioCallWindow({
   const iceCandidateQueue = useRef([]);
   const remoteDescSet = useRef(false);
   const [offerSent, setOfferSent] = useState(false);
+  const [iceState, setIceState] = useState('');
+  const testAudioRef = useRef(null);
 
   const addQueuedIceCandidates = async () => {
     if (remoteDescSet.current && pcRef.current && iceCandidateQueue.current.length > 0) {
@@ -112,6 +115,9 @@ function AudioCallWindow({
   useEffect(() => {
     let unsub = null;
     let pc = new window.RTCPeerConnection(servers);
+    console.log('[AudioCallWindow] PeerConnection created:', pc);
+    console.log('[AudioCallWindow] Initial ICE state:', pc.iceConnectionState);
+    setIceState(pc.iceConnectionState);
     pcRef.current = pc;
     let localStream;
     let remoteStream = new window.MediaStream();
@@ -161,6 +167,7 @@ function AudioCallWindow({
       };
 
       pc.oniceconnectionstatechange = () => {
+        setIceState(pc.iceConnectionState);
         console.log('[AudioCallWindow] ICE connection state changed:', pc.iceConnectionState);
       };
 
@@ -304,8 +311,17 @@ function AudioCallWindow({
       <div style={{ fontSize: 22, color: '#ff4081', fontWeight: 700, marginBottom: 18 }}>
         {error ? error : callActive ? `Audio Call with ${remoteUserName}` : 'Connecting...'}
       </div>
+      <div style={{ color: '#888', fontSize: 14, marginBottom: 8 }}>ICE Connection State: {iceState}</div>
       <audio id="remoteAudio" autoPlay style={{ width: 0, height: 0 }} />
-
+      {/* Test audio playback */}
+      <audio ref={testAudioRef} src={testSound} />
+      <button
+        style={{ marginBottom: 10, background: '#ffe0ec', color: '#ff4081', border: 'none', borderRadius: 12, padding: '8px 18px', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}
+        onClick={() => { testAudioRef.current && testAudioRef.current.play(); }}
+      >
+        Play Test Sound
+      </button>
+      {/* Audio level meters */}
       <div style={{ marginBottom: 20, textAlign: 'center' }}>
         <div style={{ fontSize: 14, color: '#888', marginBottom: 5 }}>Your Audio Level:</div>
         {localStreamRef.current && localStreamRef.current.getAudioTracks().length > 0 && (
@@ -316,7 +332,6 @@ function AudioCallWindow({
           <AudioLevelMeter stream={remoteStreamRef.current} />
         )}
       </div>
-
       <button
         onClick={handleEnd}
         style={{
