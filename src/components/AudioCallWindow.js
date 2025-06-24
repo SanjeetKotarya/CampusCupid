@@ -76,6 +76,20 @@ const servers = {
   ],
 };
 
+// Add a global audioContext ref for resumeAudioContext
+let globalAudioContext = null;
+
+// Add resumeAudioContext function
+const resumeAudioContext = async () => {
+  if (!globalAudioContext) {
+    globalAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (globalAudioContext.state === 'suspended') {
+    await globalAudioContext.resume();
+    console.log('[AudioCallWindow] AudioContext resumed');
+  }
+};
+
 function AudioCallWindow({
   callId,
   isCaller,
@@ -132,7 +146,14 @@ function AudioCallWindow({
 
     async function start() {
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        await resumeAudioContext(); // Resume audio context on call start
+        localStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
         if (cancelled || !pcRef.current || pcRef.current.signalingState === 'closed') {
           setError('Call was cancelled or connection closed before microphone could be accessed.');
           setFatalError(true);
@@ -166,7 +187,8 @@ function AudioCallWindow({
           audioElem.srcObject = remoteStream;
           audioElem.muted = false;
           audioElem.volume = 1.0;
-          console.log('[AudioCallWindow] Set remoteAudio.srcObject:', remoteStream);
+          audioElem.play().catch(e => console.error('Audio play failed:', e));
+          console.log('[AudioCallWindow] Set remoteAudio.srcObject and called play()', remoteStream);
         } else {
           console.warn('[AudioCallWindow] remoteAudio element not found');
         }
@@ -313,7 +335,7 @@ function AudioCallWindow({
         {error ? error : callActive ? `Audio Call with ${remoteUserName}` : 'Connecting...'}
       </div>
       <div style={{ color: '#888', fontSize: 14, marginBottom: 8 }}>ICE Connection State: {iceState}</div>
-      <audio id="remoteAudio" autoPlay style={{ width: 0, height: 0 }} />
+      <audio id="remoteAudio" autoPlay playsInline style={{ width: 0, height: 0 }} />
       {/* Test audio playback */}
       <audio ref={testAudioRef} src={testSound} />
       <button
