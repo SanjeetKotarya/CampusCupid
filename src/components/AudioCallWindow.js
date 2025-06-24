@@ -268,10 +268,14 @@ function AudioCallWindow({
             console.warn('[AudioCallWindow] Skipped setRemoteDescription(answer) because signalingState is', pc?.signalingState);
           }
         } else if (msg.type === 'ice') {
+          console.log('[AudioCallWindow] Received ICE candidate:', msg.candidate);
           if (!remoteDescSet.current) {
             iceCandidateQueue.current.push(msg.candidate);
+            console.log('[AudioCallWindow] Queued ICE candidate (remote description not set yet)');
           } else {
+            console.log('[AudioCallWindow] Adding ICE candidate to peer connection');
             await pcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate));
+            console.log('[AudioCallWindow] addIceCandidate success');
           }
         } else if (msg.type === 'end') {
           setError('Call ended by remote user.');
@@ -283,6 +287,7 @@ function AudioCallWindow({
       } catch (err) {
         setError('Signaling error: ' + err.message);
         setFatalError(true);
+        console.error('[AudioCallWindow] Error in signaling handler:', err);
       }
     });
     return () => { if (unsub) unsub(); };
