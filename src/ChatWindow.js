@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { db } from "./firebase";
-import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, deleteDoc, doc } from "firebase/firestore";
+import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, deleteDoc, doc, getDoc } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 
 function ChatWindow({ match, currentUser, onClose }) {
@@ -14,6 +14,7 @@ function ChatWindow({ match, currentUser, onClose }) {
   const [deletingMsg, setDeletingMsg] = useState(false);
   const [menuMsgId, setMenuMsgId] = useState(null);
   const [menuAnchor, setMenuAnchor] = useState({ x: 0, y: 0 });
+  const [unmatched, setUnmatched] = useState(false);
 
   useEffect(() => {
     if (!match?.matchId) return;
@@ -41,6 +42,22 @@ function ChatWindow({ match, currentUser, onClose }) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Listen for match document deletion (unmatch by other user)
+  useEffect(() => {
+    if (!match?.matchId) return;
+    const matchDocRef = doc(db, "matches", match.matchId);
+    const unsub = onSnapshot(matchDocRef, (snap) => {
+      if (!snap.exists()) {
+        setUnmatched(true);
+        setTimeout(() => {
+          setUnmatched(false);
+          onClose();
+        }, 2000);
+      }
+    });
+    return () => unsub();
+  }, [match?.matchId, onClose]);
+
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!input.trim()) return;
@@ -51,6 +68,10 @@ function ChatWindow({ match, currentUser, onClose }) {
     });
     setInput("");
     if (inputRef.current) inputRef.current.focus();
+    // Update last seen timestamp for this chat to now
+    const lastSeenTimestamps = JSON.parse(localStorage.getItem('messages_last_seen_timestamps') || '{}');
+    lastSeenTimestamps[match.matchId] = Date.now();
+    localStorage.setItem('messages_last_seen_timestamps', JSON.stringify(lastSeenTimestamps));
   };
 
   // Long press logic
@@ -130,6 +151,15 @@ function ChatWindow({ match, currentUser, onClose }) {
         <span style={{ fontWeight: 600, color: "#ff4081" }}>{match.name}</span>
       </div>
       <div style={{ flex: 1, overflowY: "auto", background: "#fff0fa", minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        {/* Unmatched popup */}
+        {unmatched && (
+          <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 5000, background: 'rgba(0,0,0,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ background: '#fff', borderRadius: 18, boxShadow: '0 4px 32px #ff408144', padding: 32, minWidth: 220, textAlign: 'center', maxWidth: 320, width: '90%' }}>
+              <div style={{ fontSize: 20, color: '#ff4081', fontWeight: 700, marginBottom: 12 }}>The other person unmatched you.</div>
+              <div style={{ color: '#888', marginBottom: 12, fontSize: 16 }}>This chat will close automatically.</div>
+            </div>
+          </div>
+        )}
         <div style={{ marginTop: 'auto', padding: '16px' }}>
           {messages.map(msg => {
             const isMine = currentUser.uid === msg.senderId;

@@ -23,6 +23,7 @@ function MessagesPage() {
   const [touchEndX, setTouchEndX] = useState(null);
   const [newMessagesCount, setNewMessagesCount] = useState(0);
   const prevTabRef = useRef(tab);
+  const [unmatching, setUnmatching] = useState(null);
 
   // Helper to get latest message timestamp for a match
   async function getLatestMessageTimestamp(matchId) {
@@ -126,7 +127,7 @@ function MessagesPage() {
           }
           setNewMessagesCount(newMatchCount + newMsgCount);
         });
-        // Fetch requests (pending likes)
+        // Fetch requests (pending likes) once on load
         const fetchRequests = async () => {
           // Users who liked me but are not matched
           const likesSnapshot = await getDocs(collection(db, "users", user.uid, "likes"));
@@ -146,7 +147,7 @@ function MessagesPage() {
           setRequests(requestsList);
         };
         fetchRequests();
-        return () => unsubscribe();
+        return () => { unsubscribe(); };
       }
     });
     return () => unsub();
@@ -186,6 +187,56 @@ function MessagesPage() {
       })();
     }
   }, [selectedMatch]);
+
+  // When chat window is closed, update last seen timestamp and unread count
+  useEffect(() => {
+    if (!selectedMatch) {
+      // Chat window closed, update all unread counts
+      const lastSeenTimestamps = JSON.parse(localStorage.getItem('messages_last_seen_timestamps') || '{}');
+      (async () => {
+        const counts = {};
+        for (const match of matches) {
+          counts[match.matchId] = await getNewMessagesCount(match.matchId, lastSeenTimestamps[match.matchId] || 0);
+        }
+        setMatchNewMsgCounts(counts);
+      })();
+    }
+  }, [selectedMatch, matches]);
+
+  // Real-time unread count update for each match
+  useEffect(() => {
+    if (!currentUser || !matches.length) return;
+    const unsubscribes = [];
+    const lastSeenTimestamps = JSON.parse(localStorage.getItem('messages_last_seen_timestamps') || '{}');
+    matches.forEach(match => {
+      const messagesCol = collection(db, "chats", match.matchId, "messages");
+      const q = query(messagesCol, orderBy("timestamp", "desc"), limit(1));
+      const unsub = onSnapshot(q, (snap) => {
+        if (!snap.empty) {
+          const msg = snap.docs[0].data();
+          const ts = msg.timestamp?.toMillis?.() || msg.timestamp || 0;
+          // Only count if message is from the other user
+          if (msg.senderId === currentUser.uid) {
+            setMatchNewMsgCounts(prev => ({ ...prev, [match.matchId]: 0 }));
+            return;
+          }
+          // If chat is open, don't increment unread
+          if (selectedMatch && selectedMatch.matchId === match.matchId) {
+            setMatchNewMsgCounts(prev => ({ ...prev, [match.matchId]: 0 }));
+            return;
+          }
+          // Otherwise, update unread count if new message
+          if (ts > (lastSeenTimestamps[match.matchId] || 0)) {
+            setMatchNewMsgCounts(prev => ({ ...prev, [match.matchId]: (prev[match.matchId] || 0) + 1 }));
+          }
+        }
+      });
+      unsubscribes.push(unsub);
+    });
+    return () => {
+      unsubscribes.forEach(unsub => unsub());
+    };
+  }, [matches, selectedMatch, currentUser]);
 
   const handleAcceptRequest = async (requestUser) => {
     if (!currentUser) return;
@@ -309,55 +360,90 @@ function MessagesPage() {
                     padding: "14px 18px",
                     borderBottom: "1px solid #f5c1e1",
                     cursor: "pointer",
-                    position: "relative"
+                    position: "relative",
+                    background: '#fff',
                   }}
                 >
-                  <img
-                    src={match.photoURL || "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"}
-                    alt={match.name}
-                    style={{ width: 48, height: 48, borderRadius: "50%", marginRight: 14, border: "2px solid #ffb6d5", cursor: "pointer" }}
-                    onClick={e => { e.stopPropagation(); navigate(`/profile/${match.id}`); }}
-                    onError={e => { e.target.onerror = null; e.target.src = "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"; }}
-                  />
-                  <div style={{ flex: 1 }} onClick={() => setSelectedMatch(match)}>
-                    <div style={{ color: "#ff4081", fontWeight: 600, fontSize: 18 }}>{match.name}</div>
-                    <div style={{ color: "#888", fontSize: 14 }}>{match.gender}</div>
-                  </div>
-                  {matchNewMsgCounts[match.matchId] > 0 && (
-                    <span style={{
+                  {/* Blur and spinner overlay for unmatching */}
+                  {unmatching === match.id && (
+                    <div style={{
                       position: 'absolute',
-                      top: 10,
-                      left: 38,
-                      background: '#ff4081',
-                      color: '#fff',
-                      borderRadius: '50%',
-                      width: 20,
-                      height: 20,
-                      display: 'inline-flex',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      background: 'rgba(255,255,255,0.7)',
+                      backdropFilter: 'blur(2.5px) grayscale(0.3)',
+                      zIndex: 2,
+                      display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: 12,
-                      fontWeight: 700,
-                      fontFamily: 'monospace',
-                      boxShadow: '0 2px 8px #ff408122',
-                    }}>{matchNewMsgCounts[match.matchId]}</span>
+                      borderRadius: 0,
+                    }}>
+                      <LoadingSpinner size={32} text="" />
+                    </div>
                   )}
-                  <button
-                    style={{
-                      background: "#ffe0ec",
-                      color: "#ff4081",
-                      border: "none",
-                      borderRadius: 16,
-                      padding: "6px 14px",
-                      fontWeight: 600,
-                      fontSize: 13,
-                      marginLeft: 8,
-                      cursor: "pointer"
-                    }}
-                    onClick={e => { e.stopPropagation(); setUnmatchTarget(match); }}
-                  >
-                    Unmatch
-                  </button>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    width: '100%',
+                    filter: unmatching === match.id ? 'blur(2px) grayscale(0.3)' : 'none',
+                    opacity: unmatching === match.id ? 0.7 : 1,
+                    pointerEvents: unmatching === match.id ? 'none' : 'auto',
+                    transition: 'filter 0.2s, opacity 0.2s',
+                  }}>
+                    <img
+                      src={match.photoURL || "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"}
+                      alt={match.name}
+                      style={{ width: 48, height: 48, borderRadius: "50%", marginRight: 14, border: "2px solid #ffb6d5", cursor: "pointer" }}
+                      onClick={e => { e.stopPropagation(); navigate(`/profile/${match.id}`); }}
+                      onError={e => { e.target.onerror = null; e.target.src = "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"; }}
+                    />
+                    <div style={{ flex: 1 }} onClick={() => setSelectedMatch(match)}>
+                      <div style={{ color: "#ff4081", fontWeight: 600, fontSize: 18 }}>{match.name}</div>
+                      <div style={{ color: "#888", fontSize: 14 }}>{match.gender}</div>
+                    </div>
+                    {matchNewMsgCounts[match.matchId] > 0 && (
+                      <span style={{
+                        position: 'absolute',
+                        top: 10,
+                        left: 38,
+                        background: '#ff4081',
+                        color: '#fff',
+                        borderRadius: '50%',
+                        width: 20,
+                        height: 20,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        fontFamily: 'monospace',
+                        boxShadow: '0 2px 8px #ff408122',
+                        zIndex: 3,
+                      }}>{matchNewMsgCounts[match.matchId]}</span>
+                    )}
+                    {unmatching === match.id ? (
+                      <div style={{ marginLeft: 8, width: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }} />
+                    ) : (
+                      <button
+                        style={{
+                          background: "#ffe0ec",
+                          color: "#ff4081",
+                          border: "none",
+                          borderRadius: 16,
+                          padding: "6px 14px",
+                          fontWeight: 600,
+                          fontSize: 13,
+                          marginLeft: 8,
+                          cursor: "pointer"
+                        }}
+                        onClick={e => { e.stopPropagation(); setUnmatchTarget(match); }}
+                      >
+                        Unmatch
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -434,12 +520,12 @@ function MessagesPage() {
                 if (!currentUser || !unmatchTarget) return;
                 const matchId = unmatchTarget.matchId;
                 const otherUserId = unmatchTarget.id;
-
+                setUnmatching(otherUserId); // Start spinner
+                setUnmatchTarget(null); // Close popup immediately
                 // Delete chat messages
                 const messagesQuery = query(collection(db, "chats", matchId, "messages"));
                 const messagesSnapshot = await getDocs(messagesQuery);
                 const messageDeletions = messagesSnapshot.docs.map(doc => deleteDoc(doc.ref));
-
                 // Also delete the match document and the likes from both users
                 await Promise.all([
                   ...messageDeletions,
@@ -447,11 +533,12 @@ function MessagesPage() {
                   deleteDoc(doc(db, "users", currentUser.uid, "likes", otherUserId)),
                   deleteDoc(doc(db, "users", otherUserId, "likes", currentUser.uid)),
                 ]);
-
                 // Update UI
                 setMatches(prev => prev.filter(m => m.id !== otherUserId));
                 if (selectedMatch?.id === otherUserId) setSelectedMatch(null);
-                setUnmatchTarget(null);
+                setUnmatching(null); // Remove spinner
+                // Remove cached chat messages for this match
+                localStorage.removeItem(`chat_messages_${matchId}`);
               }}
             >
               Yes, Unmatch
