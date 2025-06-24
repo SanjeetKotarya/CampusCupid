@@ -5,6 +5,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import ChatWindow from "./ChatWindow";
 import { useNavigate } from "react-router-dom";
 import LoadingSpinner from "./components/LoadingSpinner";
+import AudioCallWindow from "./components/AudioCallWindow";
 
 function getMatchId(uid1, uid2) {
   return [uid1, uid2].sort().join("_");
@@ -23,6 +24,12 @@ function MessagesPage({ currentUser }) {
   const [newMessagesCount, setNewMessagesCount] = useState(0);
   const prevTabRef = useRef(tab);
   const [unmatching, setUnmatching] = useState(null);
+  const [callId, setCallId] = useState(null);
+  const [isCaller, setIsCaller] = useState(false);
+  const [audioCallOpen, setAudioCallOpen] = useState(false);
+  const [incomingCall, setIncomingCall] = useState(null); // { callId, matchId, offer, callerId, callerName }
+  const [pendingOffer, setPendingOffer] = useState(null);
+  const [chatWasOpenBeforeCall, setChatWasOpenBeforeCall] = useState(false);
 
   // Derive selectedMatch from matches and selectedMatchId
   const selectedMatch = matches.find(m => m.matchId === selectedMatchId) || null;
@@ -248,6 +255,52 @@ function MessagesPage({ currentUser }) {
     };
   }, [matches, selectedMatchId, currentUser]);
 
+  // Add this useEffect to listen for incoming call offers globally
+  useEffect(() => {
+    if (!currentUser || !matches.length) return;
+    const unsubs = [];
+    matches.forEach(match => {
+      const callsCol = collection(db, "chats", match.matchId, "calls");
+      const unsub = onSnapshot(callsCol, (snap) => {
+        snap.docChanges().forEach(change => {
+          if (change.type === 'added' || change.type === 'modified') {
+            const data = change.doc.data();
+            const callId = change.doc.id;
+            // If this is an offer and not from me, and not already in a call
+            if (data.type === 'offer' && data.offer && data.offer.sdp && !audioCallOpen && !incomingCall && data.offer.callerId !== currentUser.uid) {
+              setIncomingCall({
+                callId,
+                matchId: match.matchId,
+                offer: data.offer,
+                callerId: data.offer.callerId,
+                callerName: match.name,
+                photoURL: match.photoURL,
+              });
+              setPendingOffer(data.offer);
+            }
+          }
+        });
+      });
+      unsubs.push(unsub);
+    });
+    return () => { unsubs.forEach(u => u()); };
+  }, [currentUser, matches, audioCallOpen, incomingCall]);
+
+  // Add this effect to close incoming call modal if caller ends the call before receiver accepts
+  useEffect(() => {
+    if (!incomingCall) return;
+    const callDocRef = doc(db, "chats", incomingCall.matchId, "calls", incomingCall.callId);
+    const unsub = onSnapshot(callDocRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.type === 'end' || data.type === 'declined') {
+          setIncomingCall(null);
+        }
+      }
+    });
+    return () => unsub();
+  }, [incomingCall]);
+
   const handleAcceptRequest = async (requestUser) => {
     if (!currentUser) return;
     // Like them back to create a match
@@ -291,6 +344,48 @@ function MessagesPage({ currentUser }) {
   const setSelectedMatchIdLogged = (val) => {
     console.log('[MessagesPage] setSelectedMatchId called with', val, new Error().stack);
     setSelectedMatchId(val);
+  };
+
+  // Logging wrappers
+  const setCallIdLogged = (val) => {
+    console.log('[MessagesPage] setCallIdLogged called with', val);
+    setCallId(val);
+  };
+  const setAudioCallOpenLogged = (val) => {
+    console.log('[MessagesPage] setAudioCallOpenLogged called with', val);
+    setAudioCallOpen(val);
+  };
+
+  // Common audio call starter
+  const handleStartAudioCall = (match) => {
+    if (!currentUser || !match) return;
+    setChatWasOpenBeforeCall(!!selectedMatchId);
+    const newCallId = `${currentUser.uid}_${Date.now()}`;
+    setCallIdLogged(newCallId);
+    setIsCaller(true);
+    setAudioCallOpenLogged(true);
+    setSelectedMatchIdLogged(match.matchId); // Open chat with this match if not already
+    setDoc(doc(db, "chats", match.matchId, "calls", newCallId), {
+      type: 'offer',
+      offer: { callerId: currentUser.uid }
+    });
+  };
+
+  // Accept/decline handlers for global incoming call
+  const handleAcceptCall = () => {
+    if (!incomingCall) return;
+    setChatWasOpenBeforeCall(!!selectedMatchId);
+    setCallIdLogged(incomingCall.callId);
+    setIsCaller(false);
+    setAudioCallOpenLogged(true);
+    setSelectedMatchIdLogged(incomingCall.matchId);
+    setPendingOffer(incomingCall.offer);
+    setIncomingCall(null);
+  };
+  const handleDeclineCall = async () => {
+    if (!incomingCall) return;
+    await setDoc(doc(db, "chats", incomingCall.matchId, "calls", incomingCall.callId), { type: 'declined', declinedBy: currentUser.uid }, { merge: true });
+    setIncomingCall(null);
   };
 
   if (loading) return <LoadingSpinner fullScreen text="Loading..." />;
@@ -439,6 +534,30 @@ function MessagesPage({ currentUser }) {
                         zIndex: 3,
                       }}>{matchNewMsgCounts[match.matchId]}</span>
                     )}
+                    {/* Call Button */}
+                    <button
+                      style={{
+                        background: '#e0f7fa',
+                        color: '#00bcd4',
+                        border: 'none',
+                        borderRadius: 16,
+                        padding: '6px 14px',
+                        fontWeight: 600,
+                        fontSize: 13,
+                        marginLeft: 8,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                      title="Start Audio Call"
+                      onClick={e => {
+                        e.stopPropagation();
+                        handleStartAudioCall(match);
+                      }}
+                    >
+                      <span role="img" aria-label="audio call" style={{ fontSize: 18, marginRight: 4 }}>📞</span> Call
+                    </button>
+                    {/* Unmatch Button */}
                     {unmatching === match.id ? (
                       <div style={{ marginLeft: 8, width: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }} />
                     ) : (
@@ -521,6 +640,13 @@ function MessagesPage({ currentUser }) {
           match={selectedMatch}
           currentUser={currentUser}
           onClose={() => setSelectedMatchIdLogged(null)}
+          onStartAudioCall={() => handleStartAudioCall(selectedMatch)}
+          audioCallOpen={audioCallOpen}
+          setAudioCallOpen={setAudioCallOpenLogged}
+          callId={callId}
+          setCallId={setCallIdLogged}
+          isCaller={isCaller}
+          setIsCaller={setIsCaller}
         />
       )}
       {unmatchTarget && (
@@ -568,6 +694,103 @@ function MessagesPage({ currentUser }) {
             </button>
           </div>
         </div>
+      )}
+      {incomingCall && (
+        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)', borderRadius: 32, marginTop: 5 }}>
+          <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', borderRadius: 32, marginTop: 24 }}>
+            {/* Profile Picture */}
+            <img
+              src={incomingCall.photoURL || 'https://api.dicebear.com/7.x/person/svg?seed=CampusCupid'}
+              alt={incomingCall.callerName || 'User'}
+              style={{ width: 96, height: 96, borderRadius: '50%', objectFit: 'cover', marginBottom: 32, marginTop: 24, border: '4px solid #fff', boxShadow: '0 2px 16px #ff408122' }}
+              onError={e => { e.target.onerror = null; e.target.src = 'https://api.dicebear.com/7.x/person/svg?seed=CampusCupid'; }}
+            />
+            {/* Caller Name */}
+            <div style={{ fontSize: 28, color: '#ff4081', fontWeight: 700, marginBottom: 8 }}>
+              {incomingCall.callerName || 'Someone'}
+            </div>
+            {/* Calling Text */}
+            <div style={{ color: '#888', fontSize: 18, marginBottom: 36, letterSpacing: 2 }}>
+              CALLING...
+            </div>
+            {/* Accept/Decline Buttons - stick to bottom */}
+            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 48, display: 'flex', justifyContent: 'center', gap: 36 }}>
+              <button
+                onClick={handleAcceptCall}
+                style={{
+                  background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: 64,
+                  height: 64,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 2px 12px #43e97b44',
+                  cursor: 'pointer',
+                  marginRight: 0,
+                }}
+                title="Accept Call"
+              >
+                <span role="img" aria-label="accept" style={{ fontSize: 32, color: '#fff' }}>📞</span>
+              </button>
+              <button
+                onClick={handleDeclineCall}
+                style={{
+                  background: 'linear-gradient(135deg, #ff5858 0%, #f857a6 100%)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: 64,
+                  height: 64,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 2px 12px #ff585844',
+                  cursor: 'pointer',
+                  marginLeft: 0,
+                }}
+                title="Decline Call"
+              >
+                <span role="img" aria-label="decline" style={{ fontSize: 32, color: '#fff', transform: 'rotate(135deg)' }}>📞</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {audioCallOpen && (
+        <AudioCallWindow
+          callId={callId}
+          isCaller={isCaller}
+          onEnd={() => {
+            setAudioCallOpenLogged(false);
+            setCallIdLogged(null);
+            setIsCaller(false);
+            setPendingOffer(null);
+            if (!chatWasOpenBeforeCall) setSelectedMatchIdLogged(null);
+          }}
+          signalingSend={msg => {
+            if (!callId || !selectedMatch) return;
+            return setDoc(doc(db, "chats", selectedMatch.matchId, "calls", callId), msg, { merge: true });
+          }}
+          signalingListen={cb => {
+            if (!callId || !selectedMatch) return () => {};
+            const callDocRef = doc(db, "chats", selectedMatch.matchId, "calls", callId);
+            let lastData = null;
+            const unsub = onSnapshot(callDocRef, (snap) => {
+              if (snap.exists()) {
+                const data = snap.data();
+                if (JSON.stringify(data) !== JSON.stringify(lastData)) {
+                  lastData = data;
+                  cb(data);
+                }
+              }
+            });
+            return unsub;
+          }}
+          remoteUserName={selectedMatch?.name || 'Remote User'}
+          remoteUserPhotoURL={selectedMatch?.photoURL}
+          pendingOffer={pendingOffer}
+        />
       )}
     </div>
   );

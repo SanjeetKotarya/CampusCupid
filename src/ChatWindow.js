@@ -4,7 +4,7 @@ import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, delete
 import { useNavigate } from "react-router-dom";
 import AudioCallWindow from "./components/AudioCallWindow";
 
-function ChatWindow({ match, currentUser, onClose }) {
+function ChatWindow({ match, currentUser, onClose, onStartAudioCall, audioCallOpen, setAudioCallOpen, callId, setCallId, isCaller, setIsCaller }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const messagesEndRef = useRef();
@@ -16,13 +16,7 @@ function ChatWindow({ match, currentUser, onClose }) {
   const [menuMsgId, setMenuMsgId] = useState(null);
   const [menuAnchor, setMenuAnchor] = useState({ x: 0, y: 0 });
   const [unmatched, setUnmatched] = useState(false);
-  const [audioCallOpen, setAudioCallOpen] = useState(false);
-  const [isCaller, setIsCaller] = useState(false);
-  const [callId, setCallId] = useState(null);
   const [lastSignal, setLastSignal] = useState(null);
-  const [incomingCall, setIncomingCall] = useState(null);
-  const [incomingCallId, setIncomingCallId] = useState(null);
-  const [pendingOffer, setPendingOffer] = useState(null);
   const pcRef = useRef(null);
 
   useEffect(() => {
@@ -66,27 +60,6 @@ function ChatWindow({ match, currentUser, onClose }) {
     });
     return () => unsub();
   }, [match?.matchId, onClose]);
-
-  // Listen for incoming call offers
-  useEffect(() => {
-    if (!match?.matchId || !currentUser?.uid) return;
-    const callsCol = collection(db, "chats", match.matchId, "calls");
-    const unsub = onSnapshot(callsCol, (snap) => {
-      snap.docChanges().forEach(change => {
-        if (change.type === 'added' || change.type === 'modified') {
-          const data = change.doc.data();
-          const callId = change.doc.id;
-          // If this is an offer and not from me, and not already in a call
-          if (data.type === 'offer' && data.offer && data.offer.sdp && !audioCallOpen && !incomingCall && data.offer.callerId !== currentUser.uid) {
-            setIncomingCall(data);
-            setIncomingCallId(callId);
-            setPendingOffer(data.offer);
-          }
-        }
-      });
-    });
-    return () => unsub();
-  }, [match?.matchId, currentUser?.uid, audioCallOpen, incomingCall]);
 
   const sendMessage = async (e) => {
     e.preventDefault();
@@ -197,47 +170,6 @@ function ChatWindow({ match, currentUser, onClose }) {
     console.log('[ChatWindow] audioCallOpen:', audioCallOpen, 'callId:', callId, 'selectedMatch:', match?.id);
   }, [audioCallOpen, callId, match?.id]);
 
-  // Replace all setAudioCallOpen, setCallId, setSelectedMatch with logging wrappers
-  const setAudioCallOpenLogged = (val) => {
-    console.log('[ChatWindow] setAudioCallOpen called with', val, new Error().stack);
-    setAudioCallOpen(val);
-  };
-  const setCallIdLogged = (val) => {
-    console.log('[ChatWindow] setCallId called with', val, new Error().stack);
-    setCallId(val);
-  };
-
-  // Audio Call button handler (caller)
-  const handleStartAudioCall = async () => {
-    // Only set up call state and write a placeholder offer
-    const newCallId = `${currentUser.uid}_${Date.now()}`;
-    setCallIdLogged(newCallId);
-    setIsCaller(true);
-    setAudioCallOpenLogged(true);
-    // Write a placeholder offer with callerId (no SDP yet)
-    await setDoc(doc(db, "chats", match.matchId, "calls", newCallId), {
-      type: 'offer',
-      offer: { callerId: currentUser.uid }
-    });
-  };
-
-  // Accept incoming call
-  const handleAcceptCall = () => {
-    setCallIdLogged(incomingCallId);
-    setIsCaller(false);
-    setAudioCallOpenLogged(true);
-    setIncomingCall(null);
-    setIncomingCallId(null);
-  };
-  // Decline incoming call
-  const handleDeclineCall = async () => {
-    if (incomingCallId) {
-      await setDoc(doc(db, "chats", match.matchId, "calls", incomingCallId), { type: 'declined', declinedBy: currentUser.uid }, { merge: true });
-    }
-    setIncomingCall(null);
-    setIncomingCallId(null);
-  };
-
   useEffect(() => {
     console.log('[ChatWindow] MOUNTED');
     return () => {
@@ -269,7 +201,7 @@ function ChatWindow({ match, currentUser, onClose }) {
         <span style={{ fontWeight: 600, color: "#ff4081" }}>{match.name}</span>
         {/* Audio Call Button */}
         <button
-          onClick={handleStartAudioCall}
+          onClick={onStartAudioCall}
           style={{
             position: 'absolute',
             right: 12,
@@ -378,27 +310,6 @@ function ChatWindow({ match, currentUser, onClose }) {
               </div>
             </div>
           )}
-          {/* Incoming Call Modal */}
-          {incomingCall && (
-            <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 99999, background: 'rgba(0,0,0,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ background: '#fff', borderRadius: 18, boxShadow: '0 4px 32px #ff408144', padding: 32, minWidth: 220, textAlign: 'center', maxWidth: 320, width: '90%' }}>
-                <div style={{ fontSize: 22, color: '#ff4081', fontWeight: 700, marginBottom: 16 }}>Incoming Audio Call</div>
-                <div style={{ color: '#888', marginBottom: 18, fontSize: 16 }}>{match.name} is calling you...</div>
-                <button
-                  style={{ background: '#ff4081', color: '#fff', border: 'none', borderRadius: 16, padding: '12px 32px', fontWeight: 600, fontSize: 18, marginRight: 12, cursor: 'pointer' }}
-                  onClick={handleAcceptCall}
-                >
-                  Accept
-                </button>
-                <button
-                  style={{ background: '#ffe0ec', color: '#ff4081', border: 'none', borderRadius: 16, padding: '12px 32px', fontWeight: 600, fontSize: 18, marginLeft: 12, cursor: 'pointer' }}
-                  onClick={handleDeclineCall}
-                >
-                  Decline
-                </button>
-              </div>
-            </div>
-          )}
           <div ref={messagesEndRef} />
         </div>
       </div>
@@ -418,15 +329,13 @@ function ChatWindow({ match, currentUser, onClose }) {
           isCaller={isCaller}
           onEnd={() => {
             console.log('[ChatWindow] AudioCallWindow onEnd called');
-            setAudioCallOpenLogged(false);
-            setCallIdLogged(null);
+            setAudioCallOpen(false);
+            setCallId(null);
             setIsCaller(false);
-            setPendingOffer(null);
           }}
           signalingSend={signalingSend}
           signalingListen={signalingListen}
           remoteUserName={match.name}
-          pendingOffer={pendingOffer}
         />
       )}
     </div>

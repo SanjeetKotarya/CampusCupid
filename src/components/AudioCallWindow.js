@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import testSound from '../test-tone.mp3'; // You will need to add a short mp3 file in src/
 
 // Audio level meter component
 const AudioLevelMeter = ({ stream }) => {
@@ -97,6 +96,7 @@ function AudioCallWindow({
   signalingSend,
   signalingListen,
   remoteUserName = 'Remote User',
+  remoteUserPhotoURL,
   pendingOffer,
 }) {
   const [callActive, setCallActive] = useState(false);
@@ -110,8 +110,12 @@ function AudioCallWindow({
   const iceCandidateQueue = useRef([]);
   const remoteDescSet = useRef(false);
   const [offerSent, setOfferSent] = useState(false);
-  const [iceState, setIceState] = useState('');
-  const testAudioRef = useRef(null);
+  const [callStarted, setCallStarted] = useState(false);
+  const [callTime, setCallTime] = useState(0);
+  const [ringTimeout, setRingTimeout] = useState(false);
+  const timerRef = useRef(null);
+  const ringTimeoutRef = useRef(null);
+  const [ringCountdown, setRingCountdown] = useState(10);
 
   const addQueuedIceCandidates = async () => {
     if (remoteDescSet.current && pcRef.current && iceCandidateQueue.current.length > 0) {
@@ -137,7 +141,6 @@ function AudioCallWindow({
     let pc = new window.RTCPeerConnection(servers);
     console.log('[AudioCallWindow] PeerConnection created:', pc);
     console.log('[AudioCallWindow] Initial ICE state:', pc.iceConnectionState);
-    setIceState(pc.iceConnectionState);
     pcRef.current = pc;
     let localStream;
     let remoteStream = new window.MediaStream();
@@ -146,7 +149,7 @@ function AudioCallWindow({
 
     async function start() {
       try {
-        await resumeAudioContext(); // Resume audio context on call start
+        await resumeAudioContext();
         localStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
@@ -154,7 +157,7 @@ function AudioCallWindow({
             autoGainControl: true
           }
         });
-        console.log('[AudioCallWindow] localStream tracks:', localStream.getTracks());
+        console.log('[AudioCallWindow] getUserMedia success, localStream tracks:', localStream.getTracks());
         if (cancelled || !pcRef.current || pcRef.current.signalingState === 'closed') {
           setError('Call was cancelled or connection closed before microphone could be accessed.');
           setFatalError(true);
@@ -164,6 +167,7 @@ function AudioCallWindow({
         localStream.getTracks().forEach(track => {
           if (pcRef.current && pcRef.current.signalingState !== 'closed') {
             pcRef.current.addTrack(track, localStream);
+            console.log('[AudioCallWindow] addTrack called for', track);
           } else {
             setError("Could not add audio track: connection is closed.");
             setFatalError(true);
@@ -188,15 +192,23 @@ function AudioCallWindow({
           audioElem.srcObject = remoteStream;
           audioElem.muted = false;
           audioElem.volume = 1.0;
-          audioElem.play().catch(e => console.error('Audio play failed:', e));
+          audioElem.play().catch(() => {});
           console.log('[AudioCallWindow] Set remoteAudio.srcObject and called play()', remoteStream);
         } else {
           console.warn('[AudioCallWindow] remoteAudio element not found');
         }
+        if (!callStarted) {
+          setCallStarted(true);
+          setCallTime(0);
+          if (timerRef.current) clearInterval(timerRef.current);
+          timerRef.current = setInterval(() => {
+            setCallTime(t => t + 1);
+          }, 1000);
+          if (ringTimeoutRef.current) clearTimeout(ringTimeoutRef.current);
+        }
       };
 
       pc.oniceconnectionstatechange = () => {
-        setIceState(pc.iceConnectionState);
         console.log('[AudioCallWindow] ICE connection state changed:', pc.iceConnectionState);
       };
 
@@ -226,6 +238,15 @@ function AudioCallWindow({
 
     start();
 
+    // Add a timeout for ringing (20s)
+    ringTimeoutRef.current = setTimeout(() => {
+      if (!callStarted) {
+        setRingTimeout(true);
+        setError('Call could not be established. Please try again.');
+        setFatalError(true);
+      }
+    }, 20000);
+
     cleanupRef.current.push(() => {
       cancelled = true;
       if (unsub) unsub();
@@ -234,6 +255,8 @@ function AudioCallWindow({
       pcRef.current = null;
       localStreamRef.current = null;
       remoteStreamRef.current = null;
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (ringTimeoutRef.current) clearTimeout(ringTimeoutRef.current);
     });
 
     return () => {
@@ -299,6 +322,7 @@ function AudioCallWindow({
         } else if (msg.type === 'end') {
           setError('Call ended by remote user.');
           setFatalError(true);
+          onEnd();
         } else if (msg.type === 'declined') {
           setError('Call was declined.');
           setFatalError(true);
@@ -314,82 +338,144 @@ function AudioCallWindow({
 
   const handleEnd = () => {
     signalingSend({ type: 'end' });
-    onEnd();
+    // Wait a short delay before closing to allow the remote peer to process the 'end' message
+    setTimeout(() => {
+      onEnd();
+    }, 400);
   };
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  // Format call time as mm:ss
+  const formatTime = (secs) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  // Automatically close the call window 2 seconds after a fatal error
+  useEffect(() => {
+    if (fatalError) {
+      const timeout = setTimeout(() => {
+        onEnd();
+      }, 2000);
+      return () => clearTimeout(timeout);
+    }
+  }, [fatalError, onEnd]);
+
+  // Countdown for auto-end (caller side)
+  useEffect(() => {
+    let interval;
+    if (isCaller && !callStarted && !fatalError) {
+      setRingCountdown(10);
+      interval = setInterval(() => {
+        setRingCountdown(prev => {
+          if (prev > 1) return prev - 1;
+          // When countdown reaches 1, next tick will be 0, so end call
+          if (prev === 1) {
+            setTimeout(() => handleEnd(), 0);
+          }
+          return 0;
+        });
+      }, 1000);
+    }
+    // Clear interval if call is answered, fatal error, or component unmounts
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isCaller, callStarted, fatalError]);
+
+  // Hide countdown as soon as call is answered
+  useEffect(() => {
+    if (callStarted) {
+      setRingCountdown(0);
+    }
+  }, [callStarted]);
 
   return (
     <div style={{
-      position: 'fixed',
+      position: 'absolute',
       top: 0,
       left: 0,
-      width: '100vw',
-      height: '100vh',
-      background: '#fff',
-      zIndex: 99999,
+      width: '100%',
+      height: '100%',
+      zIndex: 9999,
       display: 'flex',
-      flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: 0,
+      background: 'none',
     }}>
-      <div style={{ fontSize: 22, color: '#ff4081', fontWeight: 700, marginBottom: 18 }}>
-        {error ? error : callActive ? `Audio Call with ${remoteUserName}` : 'Connecting...'}
-      </div>
-      <div style={{ color: '#888', fontSize: 14, marginBottom: 8 }}>ICE Connection State: {iceState}</div>
-      <audio id="remoteAudio" autoPlay playsInline style={{ width: 0, height: 0 }} />
-      {/* Test audio playback */}
-      <audio ref={testAudioRef} src={testSound} />
-      <button
-        style={{ marginBottom: 10, background: '#ffe0ec', color: '#ff4081', border: 'none', borderRadius: 12, padding: '8px 18px', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}
-        onClick={() => { testAudioRef.current && testAudioRef.current.play(); }}
-      >
-        Play Test Sound
-      </button>
-      {/* Audio level meters */}
-      <div style={{ marginBottom: 20, textAlign: 'center' }}>
-        <div style={{ fontSize: 14, color: '#888', marginBottom: 5 }}>Your Audio Level:</div>
-        {localStreamRef.current && localStreamRef.current.getAudioTracks().length > 0 && (
-          <AudioLevelMeter stream={localStreamRef.current} />
+      <div style={{
+        width: '100%',
+        height: '100%',
+        maxWidth: 430,
+        margin: '0 auto',
+        background: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
+        borderRadius: 32,
+        boxShadow: '0 8px 48px #ff408122',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        position: 'relative',
+        padding: 0,
+        justifyContent: 'flex-start',
+      }}>
+        {/* Profile Picture */}
+        <img
+          src={remoteUserPhotoURL || 'https://api.dicebear.com/7.x/person/svg?seed=CampusCupid'}
+          alt={remoteUserName || 'User'}
+          style={{ width: 96, height: 96, borderRadius: '50%', objectFit: 'cover', marginTop: 48, marginBottom: 28, border: '4px solid #fff', boxShadow: '0 2px 16px #ff408122' }}
+          onError={e => { e.target.onerror = null; e.target.src = 'https://api.dicebear.com/7.x/person/svg?seed=CampusCupid'; }}
+        />
+        {/* Remote User Name */}
+        <div style={{ fontSize: 28, color: '#ff4081', fontWeight: 700, marginBottom: 12 }}>
+          {remoteUserName || 'Remote User'}
+        </div>
+        {/* Call Status/Timer */}
+        <div style={{ color: '#888', fontSize: 18, marginBottom: 32, letterSpacing: 2 }}>
+          {error ? error : !callStarted ? 'Ringing...' : formatTime(callTime)}
+        </div>
+        {/* Countdown Timer (only for caller, only while ringing) */}
+        {isCaller && !callStarted && !fatalError && (
+          <>
+            <div style={{ fontSize: 40, color: '#ff4081', fontWeight: 700, textAlign: 'center', margin: '0 0 8px 0' }}>
+              {ringCountdown}
+            </div>
+            {/* Info message about call system not working yet */}
+            <div style={{ fontSize: 13, color: '#888', textAlign: 'center', marginBottom: 40 }}>
+              This calling feature doesn&apos;t work yet. It will come soon!
+            </div>
+          </>
         )}
-        <div style={{ fontSize: 14, color: '#888', marginTop: 10, marginBottom: 5 }}>Remote Audio Level:</div>
-        {remoteStreamRef.current && remoteStreamRef.current.getAudioTracks().length > 0 && (
-          <AudioLevelMeter stream={remoteStreamRef.current} />
-        )}
+        {/* End Call Button at the bottom */}
+        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 48, display: 'flex', justifyContent: 'center' }}>
+          <button
+            onClick={handleEnd}
+            style={{
+              background: 'linear-gradient(135deg, #ff5858 0%, #f857a6 100%)',
+              border: 'none',
+              borderRadius: '50%',
+              width: 64,
+              height: 64,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 12px #ff585844',
+              cursor: 'pointer',
+              marginLeft: 0,
+            }}
+            title="End Call"
+          >
+            <span role="img" aria-label="end call" style={{ fontSize: 32, color: '#fff', transform: 'rotate(135deg)' }}>📞</span>
+          </button>
+        </div>
+        <audio id="remoteAudio" autoPlay playsInline style={{ width: 0, height: 0 }} />
       </div>
-      <button
-        onClick={handleEnd}
-        style={{
-          background: '#ff4081',
-          color: '#fff',
-          border: 'none',
-          borderRadius: 18,
-          padding: '14px 38px',
-          fontWeight: 700,
-          fontSize: 20,
-          marginTop: 32,
-          cursor: 'pointer',
-        }}
-      >
-        End Call
-      </button>
-      {fatalError && (
-        <button
-          onClick={onEnd}
-          style={{
-            background: '#ffe0ec',
-            color: '#ff4081',
-            border: 'none',
-            borderRadius: 18,
-            padding: '10px 28px',
-            fontWeight: 600,
-            fontSize: 16,
-            marginTop: 18,
-            cursor: 'pointer',
-          }}
-        >
-          Close
-        </button>
-      )}
     </div>
   );
 }
