@@ -141,17 +141,29 @@ function AudioCallWindow({
       }
 
       pc.ontrack = (event) => {
+        console.log('[AudioCallWindow] ontrack fired. event.streams:', event.streams);
         event.streams[0].getAudioTracks().forEach(track => {
           remoteStream.addTrack(track);
+          console.log('[AudioCallWindow] Added remote audio track:', track);
         });
         const audioElem = document.getElementById('remoteAudio');
         if (audioElem) {
           audioElem.srcObject = remoteStream;
+          audioElem.muted = false;
+          audioElem.volume = 1.0;
+          console.log('[AudioCallWindow] Set remoteAudio.srcObject:', remoteStream);
+        } else {
+          console.warn('[AudioCallWindow] remoteAudio element not found');
         }
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        console.log('[AudioCallWindow] ICE connection state changed:', pc.iceConnectionState);
       };
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
+          console.log('[AudioCallWindow] Sending ICE candidate:', event.candidate);
           signalingSend({ type: 'ice', candidate: event.candidate.toJSON() });
         }
       };
@@ -159,8 +171,11 @@ function AudioCallWindow({
       if (isCaller && !offerSent) {
         try {
           const offer = await pc.createOffer();
+          console.log('[AudioCallWindow] Caller: Created offer', offer);
           if (cancelled || !pcRef.current || pcRef.current.signalingState === 'closed') return;
+          console.log('[AudioCallWindow] Caller: Before setLocalDescription(offer), signalingState:', pc.signalingState);
           await pc.setLocalDescription(offer);
+          console.log('[AudioCallWindow] Caller: After setLocalDescription(offer), signalingState:', pc.signalingState);
           signalingSend({ type: 'offer', offer: { sdp: offer.sdp, type: offer.type } });
           setOfferSent(true);
         } catch (err) {
@@ -189,18 +204,35 @@ function AudioCallWindow({
 
   useEffect(() => {
     async function handleOffer() {
-      if (!isCaller && pendingOffer && pendingOffer.sdp && pcRef.current && !answerSent) {
-        try {
-          await pcRef.current.setRemoteDescription(new RTCSessionDescription(pendingOffer));
-          remoteDescSet.current = true;
-          await addQueuedIceCandidates();
-          const answer = await pcRef.current.createAnswer();
-          await pcRef.current.setLocalDescription(answer);
-          signalingSend({ type: 'answer', answer: { sdp: answer.sdp, type: answer.type } });
-          setAnswerSent(true);
-        } catch (err) {
-          setError('Failed to accept call: ' + err.message);
-          setFatalError(true);
+      if (!isCaller) {
+        if (!pendingOffer) {
+          console.warn('[AudioCallWindow] Callee: No pendingOffer yet');
+          return;
+        }
+        if (!pendingOffer.sdp) {
+          console.warn('[AudioCallWindow] Callee: pendingOffer has no SDP yet, waiting...');
+          return;
+        }
+        if (pcRef.current && !answerSent) {
+          try {
+            console.log('[AudioCallWindow] Callee: Before setRemoteDescription(offer), signalingState:', pcRef.current.signalingState);
+            await pcRef.current.setRemoteDescription(new RTCSessionDescription(pendingOffer));
+            console.log('[AudioCallWindow] Callee: After setRemoteDescription(offer), signalingState:', pcRef.current.signalingState);
+            remoteDescSet.current = true;
+            await addQueuedIceCandidates();
+            const answer = await pcRef.current.createAnswer();
+            console.log('[AudioCallWindow] Callee: Created answer', answer);
+            console.log('[AudioCallWindow] Callee: Before setLocalDescription(answer), signalingState:', pcRef.current.signalingState);
+            await pcRef.current.setLocalDescription(answer);
+            console.log('[AudioCallWindow] Callee: After setLocalDescription(answer), signalingState:', pcRef.current.signalingState);
+            signalingSend({ type: 'answer', answer: { sdp: answer.sdp, type: answer.type } });
+            setAnswerSent(true);
+            console.log('[AudioCallWindow] Callee: Sent answer SDP');
+          } catch (err) {
+            setError('Failed to accept call: ' + err.message);
+            setFatalError(true);
+            console.error('[AudioCallWindow] Callee: Error setting remote offer/creating answer', err);
+          }
         }
       }
     }
@@ -210,12 +242,15 @@ function AudioCallWindow({
   useEffect(() => {
     let unsub = signalingListen(async (msg) => {
       if (!msg) return;
+      console.log('[AudioCallWindow] Received signaling message:', msg);
       try {
         if (msg.type === 'answer' && isCaller) {
           const pc = pcRef.current;
           console.log('[AudioCallWindow] Received answer. Current signalingState:', pc?.signalingState);
           if (pc && pc.signalingState === 'have-local-offer') {
+            console.log('[AudioCallWindow] Caller: Before setRemoteDescription(answer), signalingState:', pc.signalingState);
             await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+            console.log('[AudioCallWindow] Caller: After setRemoteDescription(answer), signalingState:', pc.signalingState);
             remoteDescSet.current = true;
             await addQueuedIceCandidates();
             console.log('[AudioCallWindow] setRemoteDescription(answer) success. New signalingState:', pc.signalingState);
