@@ -70,23 +70,8 @@ const AudioLevelMeter = ({ stream }) => {
 
 const servers = {
   iceServers: [
-    // For local testing, use only TURN servers to force relay and avoid local network/NAT issues.
-    // Remove/comment out STUN servers for now. Revert for production!
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
+    // Use only STUN for direct P2P on local network. TURN is removed.
+    { urls: 'stun:stun.l.google.com:19302' }
   ],
 };
 
