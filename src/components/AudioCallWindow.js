@@ -70,8 +70,23 @@ const AudioLevelMeter = ({ stream }) => {
 
 const servers = {
   iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    // For local testing, use only TURN servers to force relay and avoid local network/NAT issues.
+    // Remove/comment out STUN servers for now. Revert for production!
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
   ],
 };
 
@@ -88,6 +103,11 @@ const resumeAudioContext = async () => {
     console.log('[AudioCallWindow] AudioContext resumed');
   }
 };
+
+// --- LOGGING WRAPPER FOR SIGNALING SEND ---
+function logSignalingSend(msg, context) {
+  console.log('[AudioCallWindow] signalingSend:', context, msg);
+}
 
 function AudioCallWindow({
   callId,
@@ -116,11 +136,26 @@ function AudioCallWindow({
   const [ringTimeout, setRingTimeout] = useState(false);
   const timerRef = useRef(null);
   const ringTimeoutRef = useRef(null);
-  const [ringCountdown, setRingCountdown] = useState(10);
+  const [answerSet, setAnswerSet] = useState(false);
+  const pendingAnswerRef = useRef(null);
+  const pendingIceCandidatesRef = useRef([]);
+  const [callReallyEnded, setCallReallyEnded] = useState(false);
+  // Add a ref to prevent double onEnd
+  const onEndCalledRef = useRef(false);
+  // Robust onEnd wrapper
+  const safeOnEnd = (reason, fatal = false, userEnded = false) => {
+    if (onEndCalledRef.current) {
+      console.warn('[AudioCallWindow] safeOnEnd: already called, skipping. Reason:', reason);
+      return;
+    }
+    onEndCalledRef.current = true;
+    console.log('[AudioCallWindow] safeOnEnd called. Reason:', reason, 'fatal:', fatal, 'userEnded:', userEnded, new Error().stack);
+    onEnd(fatal, userEnded);
+  };
 
   const addQueuedIceCandidates = async () => {
     if (remoteDescSet.current && pcRef.current && iceCandidateQueue.current.length > 0) {
-      console.log('[AudioCallWindow] Adding all queued ICE candidates:', iceCandidateQueue.current.length);
+      console.log('[AudioCallWindow] Flushing queued ICE candidates:', iceCandidateQueue.current.length);
       for (const candidate of iceCandidateQueue.current) {
         try {
           await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
@@ -130,12 +165,18 @@ function AudioCallWindow({
         }
       }
       iceCandidateQueue.current = [];
-    } else {
-      if (!remoteDescSet.current) console.log('[AudioCallWindow] addQueuedIceCandidates: remoteDescSet not set yet');
-      if (!pcRef.current) console.log('[AudioCallWindow] addQueuedIceCandidates: pcRef not set yet');
-      if (iceCandidateQueue.current.length === 0) console.log('[AudioCallWindow] addQueuedIceCandidates: No candidates to add');
     }
   };
+
+  // Wrap signalingSend with logging
+  const signalingSendLogged = (msg, context = '') => {
+    logSignalingSend(msg, context);
+    return signalingSend(msg);
+  };
+
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+  const [remoteStreamActive, setRemoteStreamActive] = useState(false);
 
   useEffect(() => {
     let unsub = null;
@@ -152,51 +193,53 @@ function AudioCallWindow({
       try {
         await resumeAudioContext();
         localStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          }
+          audio: true,
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
         });
         console.log('[AudioCallWindow] getUserMedia success, localStream tracks:', localStream.getTracks());
         if (cancelled || !pcRef.current || pcRef.current.signalingState === 'closed') {
-          setError('Call was cancelled or connection closed before microphone could be accessed.');
+          setError('Call was cancelled or connection closed before camera/mic could be accessed.');
           setFatalError(true);
+          safeOnEnd('getUserMedia cancelled or connection closed', true, false);
           return;
         }
         localStreamRef.current = localStream;
+        // Attach local stream to local video
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = localStream;
+        }
         localStream.getTracks().forEach(track => {
           if (pcRef.current && pcRef.current.signalingState !== 'closed') {
             pcRef.current.addTrack(track, localStream);
             console.log('[AudioCallWindow] addTrack called for', track);
           } else {
-            setError("Could not add audio track: connection is closed.");
+            setError("Could not add media track: connection is closed.");
             setFatalError(true);
+            safeOnEnd('addTrack: connection closed', true, false);
           }
         });
         setCallActive(true);
       } catch (err) {
-        setError('Could not access microphone: ' + err.message);
+        setError('Could not access camera/microphone: ' + err.message);
         setFatalError(true);
         console.error('AudioCallWindow: getUserMedia error', err);
+        safeOnEnd('getUserMedia error: ' + err.message, true, false);
         return;
       }
 
       pc.ontrack = (event) => {
         console.log('[AudioCallWindow] ontrack fired. event.streams:', event.streams);
-        event.streams[0].getAudioTracks().forEach(track => {
+        event.streams[0].getTracks().forEach(track => {
           remoteStream.addTrack(track);
-          console.log('[AudioCallWindow] Added remote audio track:', track);
+          console.log('[AudioCallWindow] Added remote media track:', track);
         });
-        const audioElem = document.getElementById('remoteAudio');
-        if (audioElem) {
-          audioElem.srcObject = remoteStream;
-          audioElem.muted = false;
-          audioElem.volume = 1.0;
-          audioElem.play().catch(() => {});
-          console.log('[AudioCallWindow] Set remoteAudio.srcObject and called play()', remoteStream);
-        } else {
-          console.warn('[AudioCallWindow] remoteAudio element not found');
+        // Attach remote stream to remote video
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = remoteStream;
+          // If the remote stream has a video track, set remoteStreamActive true
+          if (remoteStream.getVideoTracks().length > 0) {
+            setRemoteStreamActive(true);
+          }
         }
         if (!callStarted) {
           setCallStarted(true);
@@ -211,29 +254,50 @@ function AudioCallWindow({
 
       pc.oniceconnectionstatechange = () => {
         console.log('[AudioCallWindow] ICE connection state changed:', pc.iceConnectionState);
+        if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+          console.log('[AudioCallWindow] ICE connection established successfully');
+        } else if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+          console.log('[AudioCallWindow] ICE connection failed or disconnected');
+          setError('Connection lost. Please try again.');
+          setFatalError(true);
+          safeOnEnd('ICE connection failed or disconnected', true, false);
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log('[AudioCallWindow] Connection state changed:', pc.connectionState);
+        if (pc.connectionState === 'connected') {
+          console.log('[AudioCallWindow] Peer connection established');
+        } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+          console.log('[AudioCallWindow] Peer connection failed or disconnected');
+          setError('Connection lost. Please try again.');
+          setFatalError(true);
+          safeOnEnd('Peer connection failed or disconnected', true, false);
+        }
       };
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
           console.log('[AudioCallWindow] Sending ICE candidate:', event.candidate);
-          signalingSend({ type: 'ice', candidate: event.candidate.toJSON() });
+          signalingSendLogged({ type: 'ice', candidate: event.candidate.toJSON() }, isCaller ? 'caller-ice' : 'callee-ice');
         }
       };
 
-      if (isCaller && !offerSent) {
-        try {
-          const offer = await pc.createOffer();
-          console.log('[AudioCallWindow] Caller: Created offer', offer);
-          if (cancelled || !pcRef.current || pcRef.current.signalingState === 'closed') return;
-          console.log('[AudioCallWindow] Caller: Before setLocalDescription(offer), signalingState:', pc.signalingState);
-          await pc.setLocalDescription(offer);
-          console.log('[AudioCallWindow] Caller: After setLocalDescription(offer), signalingState:', pc.signalingState);
-          signalingSend({ type: 'offer', offer: { sdp: offer.sdp, type: offer.type } });
-          setOfferSent(true);
-        } catch (err) {
-          setError('Failed to create/send offer: ' + err.message);
-          setFatalError(true);
-        }
+      if (isCaller && !offerSent && pcRef.current) {
+        (async () => {
+          try {
+            const pc = pcRef.current;
+            const offer = await pc.createOffer();
+            console.log('[AudioCallWindow] Caller: About to call setLocalDescription(offer). signalingState:', pc.signalingState);
+            await pc.setLocalDescription(offer);
+            console.log('[AudioCallWindow] Caller: setLocalDescription(offer) success. signalingState:', pc.signalingState);
+            signalingSendLogged({ type: 'offer', offer: { sdp: offer.sdp, type: offer.type } }, 'caller-offer');
+            setOfferSent(true);
+          } catch (err) {
+            setError('Failed to create/send offer: ' + err.message);
+            setFatalError(true);
+          }
+        })();
       }
     }
 
@@ -262,31 +326,17 @@ function AudioCallWindow({
 
     return () => {
       cleanupRef.current.forEach(fn => fn());
+      // Do NOT call onEnd here; only call onEnd via safeOnEnd for true call end events
+      console.log('[AudioCallWindow] Cleanup on unmount. onEndCalledRef:', onEndCalledRef.current);
     };
   }, [isCaller, offerSent]);
 
   useEffect(() => {
     async function handleOffer() {
-      if (!isCaller && pendingOffer && pendingOffer.sdp && pcRef.current && !answerSent) {
-        try {
-          console.log('[AudioCallWindow] Callee: Setting remote offer SDP');
-          await pcRef.current.setRemoteDescription(new RTCSessionDescription(pendingOffer));
-          remoteDescSet.current = true;
-          console.log('[AudioCallWindow] Callee: remoteDescSet set to true, calling addQueuedIceCandidates');
-          await addQueuedIceCandidates();
-          const answer = await pcRef.current.createAnswer();
-          console.log('[AudioCallWindow] Callee: Created answer', answer);
-          console.log('[AudioCallWindow] Callee: Before setLocalDescription(answer), signalingState:', pcRef.current.signalingState);
-          await pcRef.current.setLocalDescription(answer);
-          console.log('[AudioCallWindow] Callee: After setLocalDescription(answer), signalingState:', pcRef.current.signalingState);
-          signalingSend({ type: 'answer', answer: { sdp: answer.sdp, type: answer.type } });
-          setAnswerSent(true);
-          console.log('[AudioCallWindow] Callee: Sent answer SDP');
-        } catch (err) {
-          setError('Failed to accept call: ' + err.message);
-          setFatalError(true);
-          console.error('[AudioCallWindow] Callee: Error setting remote offer/creating answer', err);
-        }
+      if (!isCaller && pendingOffer && pendingOffer.callerId && pcRef.current && !answerSent) {
+        // Wait for the actual SDP offer to be sent by the caller
+        // The initial pendingOffer only contains callerId, not SDP
+        console.log('[AudioCallWindow] Callee: Waiting for SDP offer from caller...');
       }
     }
     handleOffer();
@@ -295,53 +345,107 @@ function AudioCallWindow({
   useEffect(() => {
     let unsub = signalingListen(async (msg) => {
       if (!msg) return;
-      console.log('[AudioCallWindow] Received signaling message:', msg);
-      try {
-        if (msg.type === 'answer' && isCaller) {
-          const pc = pcRef.current;
-          console.log('[AudioCallWindow] Received answer. Current signalingState:', pc?.signalingState);
-          if (pc && pc.signalingState === 'have-local-offer') {
-            console.log('[AudioCallWindow] Caller: Before setRemoteDescription(answer), signalingState:', pc.signalingState);
-            await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
-            console.log('[AudioCallWindow] Caller: After setRemoteDescription(answer), signalingState:', pc.signalingState);
-            remoteDescSet.current = true;
-            await addQueuedIceCandidates();
-            console.log('[AudioCallWindow] setRemoteDescription(answer) success. New signalingState:', pc.signalingState);
+      console.log('[AudioCallWindow] signalingListen received FULL MSG:', msg);
+      const pc = pcRef.current;
+      // Robust answer extraction
+      const answer = msg.answer || (msg.data && msg.data.answer);
+      if (answer && isCaller && !answerSet) {
+        if (pc) {
+          if (pc.signalingState === 'have-local-offer' && !pc.remoteDescription) {
+            try {
+              await pc.setRemoteDescription(new RTCSessionDescription(answer));
+              setAnswerSet(true);
+              // Flush queued ICE candidates
+              for (const cand of pendingIceCandidatesRef.current) {
+                await pc.addIceCandidate(new RTCIceCandidate(cand));
+              }
+              pendingIceCandidatesRef.current = [];
+            } catch (err) {
+              console.error('[AudioCallWindow] setRemoteDescription(answer) error:', err);
+            }
           } else {
-            console.warn('[AudioCallWindow] Skipped setRemoteDescription(answer) because signalingState is', pc?.signalingState);
+            // Queue the answer
+            pendingAnswerRef.current = answer;
           }
-        } else if (msg.type === 'ice') {
-          console.log('[AudioCallWindow] Received ICE candidate:', msg.candidate);
-          if (!remoteDescSet.current) {
-            iceCandidateQueue.current.push(msg.candidate);
-            console.log('[AudioCallWindow] Queued ICE candidate (remote description not set yet)');
-          } else {
-            console.log('[AudioCallWindow] Adding ICE candidate to peer connection');
-            await pcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate));
-            console.log('[AudioCallWindow] addIceCandidate success');
-          }
-        } else if (msg.type === 'end') {
-          setError('Call ended by remote user.');
-          setFatalError(true);
-          onEnd();
-        } else if (msg.type === 'declined') {
-          setError('Call was declined.');
-          setFatalError(true);
         }
-      } catch (err) {
-        setError('Signaling error: ' + err.message);
+      }
+      // ICE candidate handling
+      if (msg.type === 'ice' && msg.candidate) {
+        if (pc && pc.remoteDescription) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+          } catch (err) {
+            console.error('[AudioCallWindow] addIceCandidate error:', err);
+          }
+        } else {
+          pendingIceCandidatesRef.current.push(msg.candidate);
+        }
+      }
+      // Callee: handle offer
+      if (msg.type === 'offer' && !isCaller && msg.offer && msg.offer.sdp) {
+        if (pc && pc.signalingState === 'stable') {
+          try {
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
+            const answerObj = await pc.createAnswer();
+            await pc.setLocalDescription(answerObj);
+            signalingSendLogged({ type: 'answer', answer: { sdp: answerObj.sdp, type: answerObj.type } }, 'callee-answer');
+          } catch (err) {
+            console.error('[AudioCallWindow] Callee: setRemoteDescription(offer) or setLocalDescription(answer) error:', err);
+          }
+        }
+      } else if (msg.type === 'end') {
+        setError('Call ended by remote user.');
         setFatalError(true);
-        console.error('[AudioCallWindow] Error in signaling handler:', err);
+        safeOnEnd('signaling: remote user ended call', true, false);
+      } else if (msg.type === 'declined') {
+        setError('Call was declined.');
+        setFatalError(true);
+        safeOnEnd('signaling: call declined', true, false);
       }
     });
     return () => { if (unsub) unsub(); };
   }, [isCaller]);
 
+  // On signalingState change, set pending answer if needed
+  useEffect(() => {
+    const pc = pcRef.current;
+    if (!pc) return;
+    const handler = async () => {
+      if (
+        isCaller &&
+        !answerSet &&
+        pendingAnswerRef.current &&
+        (pc.signalingState === 'have-local-offer' || pc.signalingState === 'stable')
+      ) {
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(pendingAnswerRef.current));
+          setAnswerSet(true);
+          // Flush queued ICE candidates
+          for (const cand of pendingIceCandidatesRef.current) {
+            await pc.addIceCandidate(new RTCIceCandidate(cand));
+          }
+          pendingIceCandidatesRef.current = [];
+          pendingAnswerRef.current = null;
+          console.log('[AudioCallWindow] Caller: setRemoteDescription(answer) success (from pending, forced if stable). New signalingState:', pc.signalingState);
+        } catch (err) {
+          console.error('[AudioCallWindow] setRemoteDescription(answer) from pending error:', err);
+          // Reset peer connection and notify user
+          setError('Call could not be established. Please try again. [Sync error]');
+          setFatalError(true);
+        }
+      }
+    };
+    pc.addEventListener('signalingstatechange', handler);
+    // Also call handler immediately in case the answer is already queued and state is stable
+    handler();
+    return () => pc.removeEventListener('signalingstatechange', handler);
+  }, [isCaller, answerSet]);
+
   const handleEnd = () => {
-    signalingSend({ type: 'end' });
-    // Wait a short delay before closing to allow the remote peer to process the 'end' message
+    setCallReallyEnded(true);
+    signalingSendLogged({ type: 'end' }, 'caller-end');
     setTimeout(() => {
-      onEnd();
+      safeOnEnd('user ended call', true, true);
     }, 400);
   };
 
@@ -362,41 +466,46 @@ function AudioCallWindow({
   // Automatically close the call window 2 seconds after a fatal error
   useEffect(() => {
     if (fatalError) {
-      const timeout = setTimeout(() => {
-        onEnd();
+      // Only call safeOnEnd if not already called
+      setTimeout(() => {
+        safeOnEnd('fatalError effect', true, false);
       }, 2000);
-      return () => clearTimeout(timeout);
     }
-  }, [fatalError, onEnd]);
+  }, [fatalError]);
 
-  // Countdown for auto-end (caller side)
+  // Attach local/remote streams to video elements on mount/update
   useEffect(() => {
-    let interval;
-    if (isCaller && !callStarted && !fatalError) {
-      setRingCountdown(10);
-      interval = setInterval(() => {
-        setRingCountdown(prev => {
-          if (prev > 1) return prev - 1;
-          // When countdown reaches 1, next tick will be 0, so end call
-          if (prev === 1) {
-            setTimeout(() => handleEnd(), 0);
-          }
-          return 0;
-        });
-      }, 1000);
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
     }
-    // Clear interval if call is answered, fatal error, or component unmounts
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isCaller, callStarted, fatalError]);
+    if (remoteVideoRef.current && remoteStreamRef.current) {
+      remoteVideoRef.current.srcObject = remoteStreamRef.current;
+    }
+  }, [callActive]);
 
-  // Hide countdown as soon as call is answered
+  // Reset all state/refs and peer connection when callId changes
   useEffect(() => {
-    if (callStarted) {
-      setRingCountdown(0);
+    if (!callReallyEnded) return;
+    setAnswerSet(false);
+    pendingAnswerRef.current = null;
+    pendingIceCandidatesRef.current = [];
+    if (pcRef.current) {
+      try { pcRef.current.close(); } catch (e) {}
+      pcRef.current = null;
     }
-  }, [callStarted]);
+  }, [callReallyEnded]);
+
+  // UI label logic
+  let callStatusLabel = '';
+  if (!remoteStreamActive) {
+    if (isCaller) {
+      callStatusLabel = `Calling ${remoteUserName || 'Remote User'}...`;
+    } else {
+      callStatusLabel = `Connecting to ${remoteUserName || 'Remote User'}...`;
+    }
+  } else {
+    callStatusLabel = `In call with ${remoteUserName || 'Remote User'}`;
+  }
 
   return (
     <div style={{
@@ -419,53 +528,79 @@ function AudioCallWindow({
         background: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
         borderRadius: 32,
         boxShadow: '0 8px 48px #ff408122',
+        position: 'relative',
+        overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        position: 'relative',
-        padding: 0,
         justifyContent: 'flex-start',
+        padding: 0,
       }}>
-        {/* Profile Picture */}
-        <img
-          key={remoteUserPhotoURL || 'fallback'}
-          src={remoteUserPhotoURL ? remoteUserPhotoURL : 'https://api.dicebear.com/7.x/person/svg?seed=CampusCupid'}
-          alt={remoteUserName || 'User'}
-          style={{
-            width: 96,
-            height: 96,
-            borderRadius: '50%',
-            objectFit: 'cover',
-            marginTop: 48,
-            marginBottom: 28,
-            border: '4px solid #fff',
-            boxShadow: '0 2px 16px #ff408122',
-            background: '#f8f8f8', // fallback background
-            display: 'block'
-          }}
-          onError={e => { e.target.onerror = null; e.target.src = 'https://api.dicebear.com/7.x/person/svg?seed=CampusCupid'; }}
-        />
-        {/* Remote User Name */}
-        <div style={{ fontSize: 28, color: '#ff4081', fontWeight: 700, marginBottom: 12 }}>
-          {remoteUserName || 'Remote User'}
+        {/* Overlay: Call Status Label, Timer, Error */}
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          zIndex: 10,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          pointerEvents: 'none',
+        }}>
+          <div style={{ fontSize: 18, color: '#ff4081', fontWeight: 700, marginTop: 18, marginBottom: 6, letterSpacing: 1, textShadow: '0 2px 8px #fff8' }}>
+            {callStatusLabel}
+          </div>
+          <div style={{ color: '#888', fontSize: 16, marginBottom: 8, letterSpacing: 2, textShadow: '0 2px 8px #fff8' }}>
+            {error ? error : !callStarted ? (isCaller ? 'Ringing...' : 'Connecting...') : formatTime(callTime)}
+          </div>
         </div>
-        {/* Call Status/Timer */}
-        <div style={{ color: '#888', fontSize: 18, marginBottom: 32, letterSpacing: 2 }}>
-          {error ? error : !callStarted ? 'Ringing...' : formatTime(callTime)}
+        {/* Videos stacked: remote (top), local (bottom) */}
+        <div style={{ width: '100%', height: '50%', position: 'relative', background: '#222', borderTopLeftRadius: 32, borderTopRightRadius: 32, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <video
+            ref={remoteVideoRef}
+            autoPlay
+            playsInline
+            style={{
+              width: '100%',
+              height: '100%',
+              background: 'transparent',
+              objectFit: 'cover',
+              display: remoteStreamActive ? 'block' : 'none',
+            }}
+          />
+          {!remoteStreamActive && (
+            <div style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}>
+              <div className="video-spinner" style={{ width: 48, height: 48, border: '5px solid #ffe0ec', borderTop: '5px solid #ff4081', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+            </div>
+          )}
         </div>
-        {/* Countdown Timer (only for caller, only while ringing) */}
-        {isCaller && !callStarted && !fatalError && (
-          <>
-            <div style={{ fontSize: 40, color: '#ff4081', fontWeight: 700, textAlign: 'center', margin: '0 0 8px 0' }}>
-              {ringCountdown}
-            </div>
-            <div style={{ fontSize: 13, color: '#888', textAlign: 'center', marginBottom: 40 }}>
-              Audio calling doesn&apos;t work yet. This feature is coming soon.
-            </div>
-          </>
-        )}
-        {/* End Call Button at the bottom */}
-        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 48, display: 'flex', justifyContent: 'center' }}>
+        <div style={{ width: '100%', height: '50%', position: 'relative', background: '#222', borderBottomLeftRadius: 32, borderBottomRightRadius: 32, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', borderTop: '2px solid #ffe0ec' }}>
+          <video
+            ref={localVideoRef}
+            autoPlay
+            playsInline
+            muted
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              background: '#444',
+              transform: 'scaleX(-1)', // mirror local video
+            }}
+          />
+        </div>
+        {/* Overlay: End Call Button */}
+        <div style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 36,
+          zIndex: 20,
+          display: 'flex',
+          justifyContent: 'center',
+          pointerEvents: 'auto',
+        }}>
           <button
             onClick={handleEnd}
             style={{
@@ -486,7 +621,6 @@ function AudioCallWindow({
             <span role="img" aria-label="end call" style={{ fontSize: 32, color: '#fff', transform: 'rotate(135deg)' }}>📞</span>
           </button>
         </div>
-        <audio id="remoteAudio" autoPlay playsInline style={{ width: 0, height: 0 }} />
       </div>
     </div>
   );

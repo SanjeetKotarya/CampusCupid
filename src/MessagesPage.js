@@ -30,6 +30,7 @@ function MessagesPage({ currentUser }) {
   const [incomingCall, setIncomingCall] = useState(null); // { callId, matchId, offer, callerId, callerName }
   const [pendingOffer, setPendingOffer] = useState(null);
   const [chatWasOpenBeforeCall, setChatWasOpenBeforeCall] = useState(false);
+  const [callReallyEnded, setCallReallyEnded] = useState(false);
 
   // Derive selectedMatch from matches and selectedMatchId
   const selectedMatch = matches.find(m => m.matchId === selectedMatchId) || null;
@@ -55,7 +56,10 @@ function MessagesPage({ currentUser }) {
     snap.forEach(doc => {
       const msg = doc.data();
       const ts = msg.timestamp?.toMillis?.() || msg.timestamp || 0;
-      if (ts > (lastSeenTimestamp || 0)) count++;
+      // Only count messages from the remote user (not current user)
+      if (ts > (lastSeenTimestamp || 0) && msg.senderId !== currentUser?.uid) {
+        count++;
+      }
     });
     return count;
   }
@@ -267,7 +271,7 @@ function MessagesPage({ currentUser }) {
             const data = change.doc.data();
             const callId = change.doc.id;
             // If this is an offer and not from me, and not already in a call
-            if (data.type === 'offer' && data.offer && data.offer.sdp && !audioCallOpen && !incomingCall && data.offer.callerId !== currentUser.uid) {
+            if (data.type === 'offer' && data.offer && data.offer.callerId && !audioCallOpen && !incomingCall && data.offer.callerId !== currentUser.uid) {
               setIncomingCall({
                 callId,
                 matchId: match.matchId,
@@ -373,7 +377,10 @@ function MessagesPage({ currentUser }) {
       setAudioCallOpenLogged(true);
       setDoc(doc(db, "chats", selectedMatch.matchId, "calls", callId), {
         type: 'offer',
-        offer: { callerId: currentUser.uid }
+        offer: { 
+          callerId: currentUser.uid,
+          timestamp: Date.now()
+        }
       });
     }
     // eslint-disable-next-line
@@ -765,16 +772,17 @@ function MessagesPage({ currentUser }) {
           </div>
         </div>
       )}
-      {audioCallOpen && (
+      {audioCallOpen && !callReallyEnded && (
         <AudioCallWindow
           callId={callId}
           isCaller={isCaller}
-          onEnd={() => {
+          onEnd={(fatalError, userEndedCall) => {
             setAudioCallOpenLogged(false);
-            setCallIdLogged(null);
+            if (fatalError || userEndedCall) setCallIdLogged(null);
             setIsCaller(false);
             setPendingOffer(null);
             if (!chatWasOpenBeforeCall) setSelectedMatchIdLogged(null);
+            setCallReallyEnded(true);
           }}
           signalingSend={msg => {
             if (!callId || !selectedMatch) return;
@@ -798,6 +806,7 @@ function MessagesPage({ currentUser }) {
           remoteUserName={selectedMatch?.name || 'Remote User'}
           remoteUserPhotoURL={selectedMatch?.photoURL}
           pendingOffer={pendingOffer}
+          setCallReallyEnded={setCallReallyEnded}
         />
       )}
     </div>
