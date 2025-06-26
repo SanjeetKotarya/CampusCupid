@@ -31,6 +31,7 @@ function MessagesPage({ currentUser }) {
   const [pendingOffer, setPendingOffer] = useState(null);
   const [chatWasOpenBeforeCall, setChatWasOpenBeforeCall] = useState(false);
   const [callReallyEnded, setCallReallyEnded] = useState(false);
+  const [matchPopup, setMatchPopup] = useState(null);
 
   // Derive selectedMatch from matches and selectedMatchId
   const selectedMatch = matches.find(m => m.matchId === selectedMatchId) || null;
@@ -318,6 +319,9 @@ function MessagesPage({ currentUser }) {
     });
     // Remove from requests
     setRequests(prev => prev.filter(u => u.id !== requestUser.id));
+    // Show match popup
+    setMatchPopup(requestUser);
+    setTimeout(() => setMatchPopup(null), 2200);
   };
 
   // Swipe gesture handlers
@@ -552,17 +556,18 @@ function MessagesPage({ currentUser }) {
                     {/* Call Button */}
                     <button
                       style={{
-                        background: '#e0f7fa',
+                        background: 'none',
                         color: '#00bcd4',
                         border: 'none',
                         borderRadius: 16,
-                        padding: '6px 14px',
+                        padding: 0,
                         fontWeight: 600,
-                        fontSize: 13,
+                        fontSize: 18,
                         marginLeft: 8,
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
+                        boxShadow: 'none',
                       }}
                       title="Start Audio Call"
                       onClick={e => {
@@ -570,7 +575,7 @@ function MessagesPage({ currentUser }) {
                         handleStartAudioCall(match);
                       }}
                     >
-                      <span role="img" aria-label="audio call" style={{ fontSize: 18, marginRight: 4 }}>📞</span> Call
+                      <span role="img" aria-label="audio call" style={{ fontSize: 24, margin: 0 }}>📞</span>
                     </button>
                     {/* Unmatch Button */}
                     {unmatching === match.id ? (
@@ -808,6 +813,16 @@ function MessagesPage({ currentUser }) {
           pendingOffer={pendingOffer}
           setCallReallyEnded={setCallReallyEnded}
         />
+      )}
+      {/* Match Popup Modal (copied from ExplorePage) */}
+      {matchPopup && (
+        <div style={{
+          position: "absolute", top: 40, left: 0, right: 0, margin: "auto", zIndex: 9999, background: "#fff0fa", borderRadius: 18, boxShadow: "0 4px 24px #ff408122", padding: 24, textAlign: "center", maxWidth: 320
+        }}>
+          <div style={{ fontSize: 38, color: "#ff4081", marginBottom: 8 }}>💖 It's a Match!</div>
+          <img src={matchPopup.photoURL || "https://api.dicebear.com/7.x/person/svg?seed=CampusCupid"} alt={matchPopup.name} style={{ width: 60, height: 60, borderRadius: "50%", border: "3px solid #ffb6d5", marginBottom: 8 }} />
+          <div style={{ color: "#ff4081", fontWeight: 700 }}>{matchPopup.name}</div>
+        </div>
       )}
     </div>
   );

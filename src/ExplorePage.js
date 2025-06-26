@@ -56,6 +56,11 @@ function ExplorePage() {
         });
         // Filter out matched users
         const filteredUsers = userList.filter((u) => !matchedUserIds.has(u.id));
+        // Shuffle the filtered users array
+        for (let i = filteredUsers.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [filteredUsers[i], filteredUsers[j]] = [filteredUsers[j], filteredUsers[i]];
+        }
         setUsers(filteredUsers);
         localStorage.setItem('explore_users', JSON.stringify(filteredUsers));
         setLoading(false);
@@ -232,7 +237,7 @@ function ExplorePage() {
             overflowY: 'auto',
             overscrollBehaviorY: 'contain',
             WebkitOverscrollBehaviorY: 'contain',
-            touchAction: 'pan-x',
+            touchAction: 'auto',
           };
           if (isTop) {
             if (swipeOut && swipeOut.id === user.id) {
