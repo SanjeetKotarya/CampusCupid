@@ -127,6 +127,17 @@ function ExplorePage() {
       dragPos.current.lockDirection = lockDirection;
     }
   };
+  const cleanupDrag = () => {
+    document.removeEventListener("mousemove", handleDragMove);
+    document.removeEventListener("mouseup", handleDragEnd);
+    document.removeEventListener("touchmove", handleDragMove);
+    document.removeEventListener("touchend", handleDragEnd);
+    document.removeEventListener("touchcancel", handleDragEnd);
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+  };
   const handleDragEnd = (e) => {
     if (!dragPos.current.isDragging) return;
     let dir = null;
@@ -134,12 +145,8 @@ function ExplorePage() {
       if (dragPos.current.x > 120) dir = "right";
       if (dragPos.current.x < -120) dir = "left";
     }
-    // Always clean up listeners
-    document.removeEventListener("mousemove", handleDragMove);
-    document.removeEventListener("mouseup", handleDragEnd);
-    document.removeEventListener("touchmove", handleDragMove);
-    document.removeEventListener("touchend", handleDragEnd);
-    document.removeEventListener("touchcancel", handleDragEnd);
+    // Always clean up listeners and animation frame
+    cleanupDrag();
     if (dir) {
       if (cardRef.current) cardRef.current.style.transition = 'transform 0.25s cubic-bezier(.4,1.5,.5,1)';
       if (cardRef.current) cardRef.current.style.transform = `translate(${dir === "right" ? 500 : -500}px, 0px) rotate(${dir === "right" ? 30 : -30}deg)`;
@@ -162,10 +169,20 @@ function ExplorePage() {
         cardRef.current.style.transform = '';
       }
       dragPos.current = { x: 0, y: 0, isDragging: false, lockDirection: null };
+      setTimeout(() => {
+        if (cardRef.current) cardRef.current.style.transition = '';
+      }, 180);
     }
     // Always reset drag state
     dragPos.current.isDragging = false;
   };
+
+  // Clean up listeners and animation frame on unmount
+  useEffect(() => {
+    return () => {
+      cleanupDrag();
+    };
+  }, []);
 
   if (loading) return <LoadingSpinner fullScreen text="Loading..." />;
 
