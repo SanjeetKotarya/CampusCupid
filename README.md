@@ -2,6 +2,11 @@
 
 CampusCupid is a modern, campus-focused dating and social web app designed for students to connect, match, chat, and call within their college or university community. Built with React and Firebase, it offers a seamless, mobile-friendly experience with real-time messaging and audio calls.
 
+![image](https://github.com/user-attachments/assets/a59b211b-9313-4318-a755-70fbf2360052)
+![image](https://github.com/user-attachments/assets/9969bcec-e9cb-44fe-8072-75aa9566c071)
+![image](https://github.com/user-attachments/assets/1f9ec01b-01b7-4e57-b719-319fa581fa9d)
+![image](https://github.com/user-attachments/assets/16ce6986-5c59-4282-879e-94d097dcefea)
+
 ---
 
  🚀 Features
