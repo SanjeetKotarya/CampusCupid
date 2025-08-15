@@ -119,6 +119,8 @@ function ProfilePage() {
   const [galleryToDelete, setGalleryToDelete] = useState(null);
   const [galleryLoading, setGalleryLoading] = useState({});
   const [loggingOut, setLoggingOut] = useState(false);
+  const [showAddInput, setShowAddInput] = useState(false);
+  const [addStatus, setAddStatus] = useState("idle"); // idle | posting | posted | invalid
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -236,10 +238,10 @@ function ProfilePage() {
 
   const [newGalleryUrl, setNewGalleryUrl] = useState("");
   const handleAddGalleryUrl = async () => {
-    if (!user || !newGalleryUrl.trim()) return;
+    if (!user || !newGalleryUrl.trim()) return false;
     if ((profile.gallery?.length || 0) >= 3) {
       setGalleryError("You can only add up to 3 gallery images.");
-      return;
+      return false;
     }
     try {
       const newGallery = [...(profile.gallery || []), newGalleryUrl.trim()].slice(0, 3);
@@ -247,8 +249,66 @@ function ProfilePage() {
       setProfile(p => ({ ...p, gallery: newGallery }));
       setNewGalleryUrl("");
       setGalleryError("");
+      return true;
     } catch (err) {
       setGalleryError("Failed to add image URL: " + err.message);
+      return false;
+    }
+  };
+
+  // Validate image URL by attempting to load it
+  const validateImageUrl = (url, timeoutMs = 8000) => {
+    return new Promise((resolve) => {
+      try {
+        const img = new Image();
+        const timer = setTimeout(() => { img.src = ""; resolve(false); }, timeoutMs);
+        img.onload = () => { clearTimeout(timer); resolve(true); };
+        img.onerror = () => { clearTimeout(timer); resolve(false); };
+        img.src = url;
+      } catch {
+        resolve(false);
+      }
+    });
+  };
+
+  const handleAddButtonClick = async () => {
+    if ((profile.gallery?.length || 0) >= 3) {
+      setGalleryError("You can only add up to 3 gallery images.");
+      return;
+    }
+    // First click -> reveal input
+    if (!showAddInput) {
+      setShowAddInput(true);
+      setAddStatus("idle");
+      return;
+    }
+    // Second click -> try to post
+    const url = newGalleryUrl.trim();
+    if (!url) {
+      setAddStatus("invalid");
+      setGalleryError("Please paste an image URL.");
+      return;
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      setAddStatus("invalid");
+      setGalleryError("URL must start with http:// or https://");
+      return;
+    }
+    setGalleryError("");
+    setAddStatus("posting");
+    const ok = await validateImageUrl(url);
+    if (!ok) {
+      setAddStatus("invalid");
+      setGalleryError("Invalid image link or the host blocked loading.");
+      return;
+    }
+    const saved = await handleAddGalleryUrl();
+    if (saved) {
+      setAddStatus("posted");
+      setShowAddInput(false);
+      setTimeout(() => setAddStatus("idle"), 1200);
+    } else {
+      setAddStatus("invalid");
     }
   };
 
@@ -445,21 +505,30 @@ function ProfilePage() {
       </div>
       {galleryError && <div style={{ color: '#d32f2f', fontSize: 14, marginBottom: 6 }}>{galleryError}</div>}
       {/* Add Gallery URL */}
-      <div style={{ display: 'flex', gap: 8, width: '100%', marginTop: 8 }}>
-        <input
-          type="url"
-          placeholder="Add image URL (https://...)"
-          className="auth-input"
-          value={newGalleryUrl}
-          onChange={e => setNewGalleryUrl(e.target.value)}
-          style={{ flex: 1 }}
-        />
+      {showAddInput && (
+        <>
+          <input
+            type="url"
+            placeholder="Paste image URL (https://...)"
+            className="auth-input"
+            value={newGalleryUrl}
+            onChange={e => { setNewGalleryUrl(e.target.value); setAddStatus("idle"); }}
+            style={{ width: '100%', marginTop: 8 }}
+          />
+          {addStatus === 'invalid' && (
+            <div style={{ color: '#d32f2f', fontSize: 13, marginTop: 6 }}>Invalid image link</div>
+          )}
+        </>
+      )}
+      <div style={{ display: 'flex', width: '100%', marginTop: 8 }}>
         <button
           className="auth-btn secondary"
-          style={{ whiteSpace: 'nowrap' }}
-          onClick={handleAddGalleryUrl}
-          disabled={!newGalleryUrl.trim() || (profile.gallery?.length || 0) >= 3}
-        >Add</button>
+          style={{ width: '100%' }}
+          onClick={handleAddButtonClick}
+          disabled={addStatus === 'posting' || (profile.gallery?.length || 0) >= 3}
+        >
+          {addStatus === 'posted' ? 'Posted' : showAddInput ? (addStatus === 'posting' ? 'Posting...' : 'Post') : 'Add'}
+        </button>
       </div>
       {/* Gallery Delete Confirmation Modal */}
       {galleryConfirmOpen && (
